@@ -52,48 +52,20 @@ interface DonorFile {
   type?: string;
 }
 
+eimport { Donor, Donation, Attachment } from '@/types/donor'; // ודא שהייבוא תואם לנתיב אצלך
+
 export interface ExtendedDonor extends Donor {
-  first_name_he?: string;
-  last_name_he?: string;
-  first_name_en?: string;
-  last_name_en?: string;
-
-  phone_1?: string;
-  phone_2?: string;
-  email?: string;
-
-  country?: string;
-  city?: string;
-  street?: string;
-  house_number?: string;
-
-  is_recurring?: boolean;
-
-  has_yissachar_zevulun?: boolean;
-  yissachar_zevulun_name?: string;
-
-  connected_contact?: string;
-
-  birthday?: string;
-  yahrzeit_date?: string;
-
-  notes?: string;
-  created_at?: string;
-
-  special_dates?: SpecialDate[];
-
   /**
    * התרומות יכולות להגיע גם מההורה,
    * אבל הכרטיס טוען אותן בעצמו לפי donor_id.
    */
-  donations?: DonationRecord[];
+  donations?: Donation[];
 
-  files?: DonorFile[];
+  files?: Attachment[];
 }
 
-interface DonorCardProps {
+export interface DonorCardProps {
   donor: ExtendedDonor;
-
   onAddDonation?: (e: React.MouseEvent) => void;
 }
 
@@ -101,7 +73,7 @@ interface DonorCardProps {
    עיצוב תאריך
 ========================================================= */
 
-function formatDate(date?: string | null) {
+export function formatDate(date?: string | null) {
   if (!date) return 'לא צוין';
 
   try {

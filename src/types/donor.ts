@@ -31,9 +31,9 @@ export interface Donor {
   is_recurring: boolean;
   has_yissachar_zevulun: boolean;
   yissachar_zevulun_with?: string | null;
-  yissachar_zevulun_name?: string | null; // נוסף לתאימות עם הקומפוננטות
-  birthday?: string | null;                // נוסף לתאימות עם הקומפוננטות
-  yahrzeit_date?: string | null;          // נוסף לתאימות עם הקומפוננטות
+  yissachar_zevulun_name?: string | null;
+  birthday?: string | null;
+  yahrzeit_date?: string | null;
   connected_contact?: string | null;
   special_dates?: SpecialDate[] | null;
   notes?: string | null;
@@ -44,12 +44,16 @@ export interface Donation {
   id: string;
   donor_id: string | null;
   amount: number;
-  currency: string;
+  currency: string | null;
   payment_method: string | null;
   donation_date: string;
-  receipt_number?: string | null;
+  receipt_number: string | null;
   notes?: string | null;
-  file_url?: string | null; // נוסף לתאימות עם קוד קיים
+  file_url?: string | null;
   attachments?: Attachment[];
   created_at?: string;
+}
+
+export interface ExtendedDonor extends Donor {
+  total_donations?: number;
 }
