@@ -52,15 +52,10 @@ interface DonorFile {
   type?: string;
 }
 
-import { Donor, Donation, Attachment } from '@/types/donor'; // ודא שהייבוא תואם לנתיב אצלך
+import { Donor, Donation, Attachment } from '@/types/donor';
 
 export interface ExtendedDonor extends Donor {
-  /**
-   * התרומות יכולות להגיע גם מההורה,
-   * אבל הכרטיס טוען אותן בעצמו לפי donor_id.
-   */
   donations?: Donation[];
-
   files?: Attachment[];
 }
 
