@@ -17,43 +17,45 @@ export interface Attachment {
 
 export interface Donor {
   id: string;
-  first_name_he: string | null;
-  last_name_he: string | null;
-  first_name_en?: string | null;
-  last_name_en?: string | null;
-  phone_1: string | null;
-  phone_2?: string | null;
-  email?: string | null;
-  country?: string | null;
-  city: string | null;
-  street: string | null;
-  house_number: string | null;
-  is_recurring: boolean;
-  has_yissachar_zevulun: boolean;
-  yissachar_zevulun_with?: string | null;
-  yissachar_zevulun_name?: string | null;
-  birthday?: string | null;
-  yahrzeit_date?: string | null;
-  connected_contact?: string | null;
-  special_dates?: SpecialDate[] | null;
-  notes?: string | null;
+  first_name_he?: string;
+  last_name_he?: string;
+  first_name_en?: string;
+  last_name_en?: string;
+  phone_1?: string;
+  phone_2?: string;
+  email?: string;
+  country?: string;
+  city?: string;
+  street?: string;
+  house_number?: string;
+  is_recurring?: boolean;
+  has_yissachar_zevulun?: boolean;
+  yissachar_zevulun_with?: string;
+  yissachar_zevulun_name?: string;
+  birthday?: string;
+  yahrzeit_date?: string;
+  connected_contact?: string;
+  special_dates?: SpecialDate[];
+  notes?: string;
   created_at?: string;
 }
 
 export interface Donation {
   id: string;
-  donor_id: string | null;
+  donor_id?: string;
   amount: number;
-  currency: string | null;
-  payment_method: string | null;
+  currency: string;
+  payment_method?: string;
   donation_date: string;
-  receipt_number: string | null;
-  notes?: string | null;
-  file_url?: string | null;
+  receipt_number?: string;
+  notes?: string;
+  file_url?: string;
   attachments?: Attachment[];
   created_at?: string;
 }
 
 export interface ExtendedDonor extends Donor {
   total_donations?: number;
+  donations?: Donation[];
+  files?: Attachment[];
 }
