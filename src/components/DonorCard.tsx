@@ -52,7 +52,8 @@ interface DonorFile {
   type?: string;
 }
 
-import { Donor, Donation, Attachment } from '@/types/donor';
+import React from 'react';
+import {  Donation, Attachment } from '@/types/donor';
 
 export interface ExtendedDonor extends Donor {
   donations?: Donation[];
@@ -77,6 +78,8 @@ export function formatDate(date?: string | null) {
     return date;
   }
 }
+
+// שאר קוד הקומפוננטה שלך (כגון export default function DonorCard...) ממשיך מכאן רגיל
 
 /* =========================================================
    סימן מטבע

@@ -738,7 +738,7 @@ export default function DonorsTab({
             {countries.map((country) => (
               <option
                 key={country}
-                value={country}
+                value={country || ''}
               >
                 {country}
               </option>
@@ -774,7 +774,7 @@ export default function DonorsTab({
             {cities.map((city) => (
               <option
                 key={city}
-                value={city}
+                value={city || ''}
               >
                 {city}
               </option>
@@ -901,7 +901,7 @@ export default function DonorsTab({
                 {streets.map((street) => (
                   <option
                     key={street}
-                    value={street}
+                    value={street || ''}
                   >
                     {street}
                   </option>
@@ -939,7 +939,7 @@ export default function DonorsTab({
                 {contacts.map((contact) => (
                   <option
                     key={contact}
-                    value={contact}
+                    value={contact || ''}
                   >
                     {contact}
                   </option>
