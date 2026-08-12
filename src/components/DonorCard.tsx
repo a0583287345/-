@@ -52,7 +52,7 @@ interface DonorFile {
   type?: string;
 }
 
-eimport { Donor, Donation, Attachment } from '@/types/donor'; // ודא שהייבוא תואם לנתיב אצלך
+import { Donor, Donation, Attachment } from '@/types/donor'; // ודא שהייבוא תואם לנתיב אצלך
 
 export interface ExtendedDonor extends Donor {
   /**
