@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Donor, Donation } from '@/types/donor';
@@ -20,16 +20,15 @@ import {
   X,
   LogOut,
   Loader2,
-  Settings, // <--- כפתור ההגדרות של המנהל
-  UserCircle, // הוספנו עבור חלון המשתמש המחובר
-  Radio,      // הוספנו עבור חיווי בזמן אמת של מי עוד מחובר
+  Settings,
+  UserCircle,
+  Radio,
 } from 'lucide-react';
 
 /* ============================================================
-   דף הבית - מערכת ניהול תורמים ותרומות (מוגן אימות + נתיבים)
+   תוכן הדף - הופרד כדי שנוכל לעטוף אותו ב-Suspense
 ============================================================ */
-
-export default function HomePage() {
+function DashboardContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -40,7 +39,6 @@ export default function HomePage() {
   const [authLoading, setAuthLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false); 
 
-  // --- נוספו כאן משתנים לשמירת פרטי המשתמש הנוכחי ורשימת המחוברים ---
   const [currentUserNickname, setCurrentUserNickname] = useState<string>('');
   const [currentUserRole, setCurrentUserRole] = useState<string>('');
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
@@ -108,7 +106,6 @@ export default function HomePage() {
     async function checkAuthAndFetch() {
       setAuthLoading(true);
 
-      // 1. בדיקת סשן מול Supabase
       const { data: { session }, error } = await supabase.auth.getSession();
 
       if (error || !session) {
@@ -116,14 +113,11 @@ export default function HomePage() {
         return;
       }
 
-      // 2. בדיקת הרשאות ומשיכת כינוי המשתמש מהטבלה
       const { data: roleData, error: roleError } = await supabase
         .from('user_roles')
         .select('role, nickname')
         .eq('user_id', session.user.id)
         .single();
-
-      console.log("Role Data Output:", roleData, "Error Output:", roleError);
 
       if (roleData) {
         setCurrentUserRole(roleData.role);
@@ -133,11 +127,9 @@ export default function HomePage() {
         }
       }
 
-      // 3. המשתמש מחובר - מאפשרים הצגת הדף וטוענים נתונים
       setAuthLoading(false);
       fetchData();
 
-      // 4. הפעלת מנגנון זיהוי מחוברים בזמן אמת (Presence) 
       presenceChannel = supabase.channel('online-users');
       presenceChannel
         .on('presence', { event: 'sync' }, () => {
@@ -164,7 +156,6 @@ export default function HomePage() {
 
     checkAuthAndFetch();
 
-    // ניקוי הערוץ החי כשעוזבים את העמוד
     return () => {
       if (presenceChannel) {
         supabase.removeChannel(presenceChannel);
@@ -217,9 +208,6 @@ export default function HomePage() {
     setLoading(false);
   }
 
-  /* ============================================================
-     חישוב סכומי תרומות לפי מטבע
-  ============================================================ */
   function calculateTotals(data: Donation[]) {
     const totals: Record<string, number> = {};
 
@@ -231,9 +219,6 @@ export default function HomePage() {
     setTotalsByCurrency(totals);
   }
 
-  /* ============================================================
-     טעינת תרומות מחדש
-  ============================================================ */
   async function fetchDonations() {
     setDonationsLoading(true);
 
@@ -253,9 +238,6 @@ export default function HomePage() {
     setDonationsLoading(false);
   }
 
-  /* ============================================================
-     מפת תורמים
-  ============================================================ */
   const donorMap = useMemo(() => {
     const map = new Map<string, Donor>();
     donors.forEach((donor) => {
@@ -264,9 +246,6 @@ export default function HomePage() {
     return map;
   }, [donors]);
 
-  /* ============================================================
-     שם תורם
-  ============================================================ */
   function getDonorName(donorId: string | null) {
     if (!donorId) return 'ללא תורם';
     const donor = donorMap.get(donorId);
@@ -348,15 +327,9 @@ export default function HomePage() {
     setSelectedDonorForDonation(null);
   }
 
-  /* ============================================================
-     סטטיסטיקות
-  ============================================================ */
   const activeRecurring = donors.filter((donor) => donor.is_recurring).length;
   const yissacharZevulunCount = donors.filter((donor) => donor.has_yissachar_zevulun).length;
 
-  /* ============================================================
-     מסך טעינה - בדיקת אימות
-  ============================================================ */
   if (authLoading) {
     return (
       <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-3">
@@ -366,9 +339,6 @@ export default function HomePage() {
     );
   }
 
-  /* ============================================================
-     RENDER
-  ============================================================ */
   return (
     <div dir="rtl" className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -616,5 +586,21 @@ export default function HomePage() {
 
       </div>
     </div>
+  );
+}
+
+/* ============================================================
+   עטיפת הדף ב-Suspense כדי ש-Next.js יוכל לבצע בנייה სტטית
+============================================================ */
+export default function HomePage() {
+  return (
+    <Suspense fallback={
+      <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-3">
+        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+        <p className="text-slate-600 text-sm font-medium">טוען את המערכת...</p>
+      </div>
+    }>
+      <DashboardContent />
+    </Suspense>
   );
 }
