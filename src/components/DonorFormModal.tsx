@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { usePermissions } from '@/hooks/usePermissions';
+
 import {
   X,
   Save,

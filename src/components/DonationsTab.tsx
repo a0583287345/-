@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Donor } from '@/types/donor';
+import { usePermissions } from '@/hooks/usePermissions';
 
 import {
   Search,
@@ -630,6 +631,14 @@ export default function DonationsTab({
   /* ============================================================
      RENDER
   ============================================================ */
+// ---> 2. החסימה מתחילה כאן
+  const { hasPermission, loadingPerms } = usePermissions();
+
+  if (loadingPerms) return <div className="p-8 text-center">טוען הרשאות...</div>;
+  if (!hasPermission('donations_view')) {
+    return <div className="p-8 text-center text-red-600 font-bold">אין גישה למסך תרומות.</div>;
+  }
+  // <--- סוף החסימה
 
   return (
     <div className="p-4 md:p-5 space-y-5">

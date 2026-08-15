@@ -1,9 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState, useCallback, Suspense } from 'react';
+import { useEffect, useMemo, useState, useCallback, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Donor, Donation } from '@/types/donor';
+
+// --- הייבוא של ה-Context שלך ---
+import { useAuth } from '@/components/AuthContext';
+
+// 1. הייבוא של השומר שיצרנו!
+import { usePermissions } from '@/hooks/usePermissions';
 
 import DashboardStats from '@/components/DashboardStats';
 import DonorFormModal from '@/components/DonorFormModal';
@@ -23,6 +29,7 @@ import {
   Settings,
   UserCircle,
   Radio,
+  ShieldAlert
 } from 'lucide-react';
 
 /* ============================================================
@@ -34,15 +41,19 @@ function DashboardContent() {
   const searchParams = useSearchParams();
 
   /* ============================================================
-     אימות משתמש (Auth) ונתוני המשתמש המחובר
+     אימות משתמש (Auth) - מחובר למערכת החדשה שלנו!
   ============================================================ */
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false); 
+  const { user, profile, loading: authLoading } = useAuth();
+  
+  // הפעלת השומר החדש שלנו!
+  const { hasPermission, loadingPerms } = usePermissions();
+  
+  const isAdmin = hasPermission('manage_users');
+  const currentUserNickname = profile?.full_name || user?.email?.split('@')[0] || 'משתמש לא ידוע';
+  const currentUserRole = profile?.role?.name || 'ללא הרשאה';
 
-  const [currentUserNickname, setCurrentUserNickname] = useState<string>('');
-  const [currentUserRole, setCurrentUserRole] = useState<string>('');
   const [onlineUsers, setOnlineUsers] = useState<any[]>([]);
-
+  
   /* ============================================================
      נתונים
   ============================================================ */
@@ -53,6 +64,9 @@ function DashboardContent() {
   const [donationsLoading, setDonationsLoading] = useState(false);
 
   const [totalsByCurrency, setTotalsByCurrency] = useState<Record<string, number>>({});
+
+  // פותר הלופ: שומר שמוודא שמשכנו נתונים פעם אחת בלבד
+  const hasFetchedData = useRef(false);
 
   /* ============================================================
      לשונית פעילה + סנכרון נתיבים (Routing)
@@ -103,33 +117,28 @@ function DashboardContent() {
   useEffect(() => {
     let presenceChannel: any;
 
-    async function checkAuthAndFetch() {
-      setAuthLoading(true);
+    async function initSystem() {
+      // אם הקונטקסט של המשתמש או של ההרשאות עדיין בטעינה, נחכה
+      if (authLoading || loadingPerms) return;
 
-      const { data: { session }, error } = await supabase.auth.getSession();
-
-      if (error || !session) {
+      // אם המשתמש לא מחובר, זורקים ללוגין
+      if (!user) {
         router.push('/login');
         return;
       }
 
-      const { data: roleData, error: roleError } = await supabase
-        .from('user_roles')
-        .select('role, nickname')
-        .eq('user_id', session.user.id)
-        .single();
-
-      if (roleData) {
-        setCurrentUserRole(roleData.role);
-        setCurrentUserNickname(roleData.nickname || 'משתמש ללא כינוי');
-        if (roleData.role === 'admin') {
-          setIsAdmin(true);
-        }
+      // חוסמים כניסה לדאשבורד במידה ולמשתמש המחובר אין הרשאה בכלל
+      if (!hasPermission('view_dashboard')) {
+        return; 
       }
 
-      setAuthLoading(false);
-      fetchData();
+      // הפתרון ללופ: מוודאים ש-fetchData ירוץ רק פעם אחת!
+      if (!hasFetchedData.current) {
+        fetchData();
+        hasFetchedData.current = true;
+      }
 
+      // הפעלת מעקב משתמשים מחוברים (Presence)
       presenceChannel = supabase.channel('online-users');
       presenceChannel
         .on('presence', { event: 'sync' }, () => {
@@ -146,22 +155,23 @@ function DashboardContent() {
         .subscribe(async (status: string) => {
           if (status === 'SUBSCRIBED') {
             await presenceChannel.track({
-              user_id: session.user.id,
-              nickname: roleData?.nickname || 'משתמש לא ידוע',
-              role: roleData?.role || 'viewer',
+              user_id: user.id,
+              nickname: currentUserNickname,
+              role: currentUserRole,
             });
           }
         });
     }
 
-    checkAuthAndFetch();
+    initSystem();
 
     return () => {
       if (presenceChannel) {
         supabase.removeChannel(presenceChannel);
       }
     };
-  }, [router]);
+  // צמצמתי את מערך התלויות כך שלא יעורר רינדורים מיותרים ולופים
+  }, [user?.id, authLoading, loadingPerms, router, currentUserNickname, currentUserRole]);
 
   /* ============================================================
      התנתקות מהמערכת
@@ -330,11 +340,26 @@ function DashboardContent() {
   const activeRecurring = donors.filter((donor) => donor.is_recurring).length;
   const yissacharZevulunCount = donors.filter((donor) => donor.has_yissachar_zevulun).length;
 
-  if (authLoading) {
+  /* ============================================================
+     3. חומת המגן
+  ============================================================ */
+  if (authLoading || loadingPerms) {
     return (
-      <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-3">
-        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-        <p className="text-slate-600 text-sm font-medium">מאמת הרשאות גישה...</p>
+      <div className="flex h-screen w-full flex-col items-center justify-center bg-slate-50">
+        <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
+        <span className="text-slate-600 font-medium">טוען הרשאות מערכת...</span>
+      </div>
+    );
+  }
+
+  if (!user || !hasPermission('view_dashboard')) {
+    return (
+      <div className="flex h-screen w-full flex-col items-center justify-center bg-slate-50 p-6 text-center">
+        <ShieldAlert className="w-20 h-20 text-red-400 mb-4" />
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">אין לך גישה למערכת</h2>
+        <p className="text-slate-600 max-w-md">
+          החשבון שלך מחובר, אך אין לך הרשאה מתאימה לצפות בלוח הבקרה. אנא פנה למנהל המערכת.
+        </p>
       </div>
     );
   }
@@ -368,7 +393,7 @@ function DashboardContent() {
                 <p className="text-[11px] text-slate-500 font-medium leading-none mb-1">מחובר/ת כעת:</p>
                 <p className="font-bold text-slate-800 text-sm leading-none mb-1">{currentUserNickname}</p>
                 <p className="text-[10px] font-bold">
-                  הרשאה: <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 ml-1">{currentUserRole.toUpperCase()}</span>
+                  הרשאה: <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 ml-1">{currentUserRole}</span>
                 </p>
               </div>
             </div>
@@ -590,7 +615,7 @@ function DashboardContent() {
 }
 
 /* ============================================================
-   עטיפת הדף ב-Suspense כדי ש-Next.js יוכל לבצע בנייה სტטית
+   עטיפת הדף ב-Suspense כדי ש-Next.js יוכל לבצע בנייה סטטית
 ============================================================ */
 export default function HomePage() {
   return (

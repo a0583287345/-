@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Donor } from '@/types/donor';
 import * as XLSX from 'xlsx';
-
+import { usePermissions } from '@/hooks/usePermissions';
 import {
   Search,
   UserPlus,
@@ -48,6 +48,7 @@ export default function DonorsTab({
   /* ============================================================
      חיפוש כללי
   ============================================================ */
+
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -506,7 +507,14 @@ export default function DonorsTab({
   /* ============================================================
      RENDER
   ============================================================ */
+// ---> 2. החסימה מתחילה כאן
+  const { hasPermission, loadingPerms } = usePermissions();
 
+  if (loadingPerms) return <div className="p-8 text-center">טוען הרשאות...</div>;
+  if (!hasPermission('donors_view')) {
+    return <div className="p-8 text-center text-red-600 font-bold">אין גישה למסך תורמים.</div>;
+  }
+  // <--- סוף החסימה
   return (
     <div
       className="p-4 md:p-5 space-y-5"
