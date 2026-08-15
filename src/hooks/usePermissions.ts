@@ -19,8 +19,11 @@ export function usePermissions() {
             .eq('id', user.id)
             .single();
 
-          if (data?.role?.permissions) {
-            setPermissions(data.role.permissions);
+          const roleInfo = data?.role as any;
+          const perms = Array.isArray(roleInfo) ? roleInfo[0]?.permissions : roleInfo?.permissions;
+
+          if (perms) {
+            setPermissions(perms);
           }
         }
       } catch (error) {
