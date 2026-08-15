@@ -3,15 +3,16 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/components/AuthContext';
 import { useRouter } from 'next/navigation';
-import { ShieldAlert, Users, Key, ArrowRight, Loader2 } from 'lucide-react';
+import { ShieldAlert, Users, Key, ArrowRight, Loader2, History } from 'lucide-react';
 import UsersTab from './UsersTab';
 import RolesTab from './RolesTab';
+import { AuditLogTab } from './AuditLogTab';
 
 export default function AdminPage() {
   const { profile, hasPermission, loading } = useAuth();
   const router = useRouter();
   
-  const [activeTab, setActiveTab] = useState<'users' | 'roles'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'roles' | 'logs'>('users');
 
   useEffect(() => {
     if (loading) return;
@@ -59,7 +60,7 @@ export default function AdminPage() {
         {/* תפריט התגיות (Tabs) */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="border-b border-slate-200 bg-slate-50 p-2">
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setActiveTab('users')}
                 className={`
@@ -87,6 +88,20 @@ export default function AdminPage() {
                 <Key className="w-4 h-4" />
                 ניהול רמות הרשאה
               </button>
+
+              <button
+                onClick={() => setActiveTab('logs')}
+                className={`
+                  flex-1 md:flex-none px-6 py-3 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2
+                  ${activeTab === 'logs'
+                    ? 'bg-white text-amber-700 shadow-sm border border-slate-200'
+                    : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
+                  }
+                `}
+              >
+                <History className="w-4 h-4" />
+                יומן פעילות
+              </button>
             </div>
           </div>
 
@@ -94,6 +109,7 @@ export default function AdminPage() {
           <div className="p-0">
             {activeTab === 'users' && <UsersTab />}
             {activeTab === 'roles' && <RolesTab />}
+            {activeTab === 'logs' && <AuditLogTab />}
           </div>
         </div>
       </div>

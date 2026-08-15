@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { usePermissions } from '@/hooks/usePermissions';
+import { logActivity } from '@/lib/logger';
 
 import {
   X,
@@ -287,7 +288,7 @@ export default function DonorFormModal({
   }
 
   // =====================================================
-  // מחיקת תורם
+// מחיקת תורם
   // =====================================================
 
   async function handleDeleteDonor() {
@@ -380,6 +381,15 @@ export default function DonorFormModal({
 
         return;
       }
+
+      // ===================================================
+      // 📝 רישום ביומן הפעילות (Audit Log)
+      // ===================================================
+      await logActivity(
+        'DELETE',
+        'donors',
+        `מחק את התורם ${donorName} (כולל ${donationCount} תרומות)`
+      );
 
       onClose();
       onSuccess();
