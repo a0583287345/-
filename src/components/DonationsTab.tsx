@@ -1790,26 +1790,8 @@ export default function DonationsTab({
         </div>
       )}
 
-      {/* ======================================================
-          דוחות
-      ====================================================== */}
-
-      <div className="flex justify-end">
-        <a
-          href="/reports"
-          className="
-            text-xs
-            text-slate-500
-            hover:text-blue-600
-            flex
-            items-center
-            gap-1.5
-          "
-        >
-          <FileSpreadsheet className="w-3.5 h-3.5" />
-          מעבר לדוחות המלאים
-        </a>
-      </div>
+     
+     
     </div>
   );
 }

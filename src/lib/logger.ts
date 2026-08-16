@@ -33,7 +33,8 @@ export async function logActivity(action: string, tableName: string, description
     });
 
     if (insertError) {
-      console.error('🔍 LOG DEBUG: Insert error:', insertError);
+      console.error('🔍 LOG DEBUG: Insert error object:', JSON.stringify(insertError, null, 2));
+      console.error('🔍 LOG DEBUG: Insert error message:', insertError.message || insertError.hint || insertError.details);
     }
   } catch (error) {
     console.error('🔍 LOG DEBUG: Unexpected error:', error);

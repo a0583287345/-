@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { logActivity } from '@/lib/logger';
+import { usePermissions } from '@/hooks/usePermissions';
+import { Protect } from '@/components/Protect'; 
 
 import {
   Calendar,
@@ -55,7 +57,8 @@ export default function DonationCardModal({
   onEdit,
   onDeleted,
 }: DonationCardModalProps) {
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const { hasPermission } = usePermissions(); 
 
   if (!isOpen) {
     return null;
@@ -90,7 +93,13 @@ export default function DonationCardModal({
     donation.currency ||
     '₪';
 
+  // --- פעולת מחיקה ---
   async function handleDelete() {
+    if (!hasPermission('donations_delete')) {
+      alert('אין לך הרשאה למחוק תרומות!');
+      return;
+    }
+
     const confirmed = window.confirm(
       'האם אתה בטוח שברצונך למחוק את התרומה?\n\nהפעולה אינה ניתנת לביטול.'
     );
@@ -99,7 +108,7 @@ export default function DonationCardModal({
       return;
     }
 
-    setIsDeleting(true);
+    setIsProcessing(true);
 
     try {
       const { error } = await supabase
@@ -108,31 +117,39 @@ export default function DonationCardModal({
         .eq('id', donation.id);
 
       if (error) {
-        console.error(
-          'Error deleting donation:',
-          error
-        );
-
-        alert(
-          `אירעה שגיאה במחיקת התרומה:\n${error.message}`
-        );
-
+        console.error('Error deleting donation:', error);
+        alert(`אירעה שגיאה במחיקת התרומה:\n${error.message}`);
         return;
       }
+
+      await logActivity('DELETE', 'donations', `מחק תרומה ע"ס ${currencySymbol}${formattedAmount} של התורם ${donorName} (מזהה: ${donation.id})`);
 
       onDeleted?.();
       onClose();
     } catch (error) {
-      console.error(
-        'Unexpected error deleting donation:',
-        error
-      );
-
-      alert(
-        'אירעה שגיאה לא צפויה במחיקת התרומה.'
-      );
+      console.error('Unexpected error deleting donation:', error);
+      alert('אירעה שגיאה לא צפויה במחיקת התרומה.');
     } finally {
-      setIsDeleting(false);
+      setIsProcessing(false);
+    }
+  }
+
+  // --- פעולת פתיחת עריכה ---
+  async function handleEditClick() {
+    if (!hasPermission('donations_edit')) {
+      alert('אין לך הרשאה לערוך תרומות!');
+      return;
+    }
+
+    try {
+      // רישום הפעולה ללוג לפני פתיחת העריכה
+      await logActivity('EDIT_ACCESS', 'donations', `ניגש לערוך תרומה ע"ס ${currencySymbol}${formattedAmount} של התורם ${donorName} (מזהה: ${donation.id})`);
+      
+      onEdit?.();
+    } catch (error) {
+      console.error('Error logging edit activity:', error);
+      // במקרה של שגיאה בלוג עדיין נאפשר לערוך כדי לא לתקוע את המשתמש
+      onEdit?.(); 
     }
   }
 
@@ -152,7 +169,6 @@ export default function DonationCardModal({
       "
       onClick={onClose}
     >
-      {/* החלון עצמו */}
       <div
         className="
           relative
@@ -168,11 +184,10 @@ export default function DonationCardModal({
         "
         onClick={(e) => e.stopPropagation()}
       >
-        {/* כפתור סגירה */}
         <button
           type="button"
           onClick={onClose}
-          disabled={isDeleting}
+          disabled={isProcessing}
           className="
             absolute
             top-4
@@ -201,7 +216,6 @@ export default function DonationCardModal({
         </button>
 
         <div className="p-5 md:p-6">
-          {/* כותרת */}
           <div className="flex items-start gap-3 mb-6 pl-10">
             <div
               className="
@@ -225,227 +239,116 @@ export default function DonationCardModal({
               <h2 className="text-xl font-bold text-slate-800">
                 פרטי תרומה
               </h2>
-
               <p className="text-xs text-slate-400 mt-1">
                 פרטי התרומה המלאים
               </p>
             </div>
           </div>
 
-          {/* סכום התרומה */}
-          <div
-            className="
-              rounded-2xl
-              bg-emerald-50
-              border
-              border-emerald-200
-              p-6
-              mb-5
-              text-center
-            "
-          >
-            <div className="text-xs text-emerald-600 font-medium mb-2">
-              סכום התרומה
-            </div>
-
-            <div
-              dir="ltr"
-              className="text-3xl md:text-4xl font-bold text-emerald-700"
-            >
-              {currencySymbol}
-              {formattedAmount}
-            </div>
-
-            <div className="text-xs text-emerald-600 mt-2">
-              {donation.currency || 'ILS'}
-            </div>
-          </div>
-
-          {/* פרטים */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {/* תורם */}
+          {/* הגנה על צפייה בסכום */}
+          <Protect permId="donations_view_amount">
             <div
               className="
-                bg-slate-50
-                rounded-xl
+                rounded-2xl
+                bg-emerald-50
                 border
-                border-slate-200
-                p-4
+                border-emerald-200
+                p-6
+                mb-5
+                text-center
               "
             >
-              <div className="flex items-center gap-2 mb-2">
-                <User className="w-4 h-4 text-slate-400" />
-
-                <span className="text-xs text-slate-400">
-                  תורם
-                </span>
+              <div className="text-xs text-emerald-600 font-medium mb-2">
+                סכום התרומה
               </div>
 
+              <div
+                dir="ltr"
+                className="text-3xl md:text-4xl font-bold text-emerald-700"
+              >
+                {currencySymbol}
+                {formattedAmount}
+              </div>
+
+              <div className="text-xs text-emerald-600 mt-2">
+                {donation.currency || 'ILS'}
+              </div>
+            </div>
+          </Protect>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <User className="w-4 h-4 text-slate-400" />
+                <span className="text-xs text-slate-400">תורם</span>
+              </div>
               <div className="font-bold text-sm text-slate-800">
                 {donorName}
               </div>
             </div>
 
-            {/* תאריך */}
-            <div
-              className="
-                bg-slate-50
-                rounded-xl
-                border
-                border-slate-200
-                p-4
-              "
-            >
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Calendar className="w-4 h-4 text-slate-400" />
-
-                <span className="text-xs text-slate-400">
-                  תאריך התרומה
-                </span>
+                <span className="text-xs text-slate-400">תאריך התרומה</span>
               </div>
-
               <div className="font-bold text-sm text-slate-800">
                 {formattedDate}
               </div>
             </div>
 
-            {/* אמצעי תשלום */}
-            <div
-              className="
-                bg-slate-50
-                rounded-xl
-                border
-                border-slate-200
-                p-4
-              "
-            >
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-2">
                 <CreditCard className="w-4 h-4 text-slate-400" />
-
-                <span className="text-xs text-slate-400">
-                  אמצעי תשלום
-                </span>
+                <span className="text-xs text-slate-400">אמצעי תשלום</span>
               </div>
-
               <div className="font-bold text-sm text-slate-800">
                 {donation.payment_method || '-'}
               </div>
             </div>
 
-            {/* מספר קבלה */}
-            <div
-              className="
-                bg-slate-50
-                rounded-xl
-                border
-                border-slate-200
-                p-4
-              "
-            >
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Hash className="w-4 h-4 text-slate-400" />
-
-                <span className="text-xs text-slate-400">
-                  מספר קבלה
-                </span>
+                <span className="text-xs text-slate-400">מספר קבלה</span>
               </div>
-
-              <div
-                dir="ltr"
-                className="font-bold text-sm text-slate-800"
-              >
+              <div dir="ltr" className="font-bold text-sm text-slate-800">
                 {donation.receipt_number || '-'}
               </div>
             </div>
 
-            {/* מזהה תרומה */}
-            <div
-              className="
-                bg-slate-50
-                rounded-xl
-                border
-                border-slate-200
-                p-4
-                md:col-span-2
-              "
-            >
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 md:col-span-2">
               <div className="flex items-center gap-2 mb-2">
                 <FileCheck className="w-4 h-4 text-slate-400" />
-
-                <span className="text-xs text-slate-400">
-                  מזהה תרומה
-                </span>
+                <span className="text-xs text-slate-400">מזהה תרומה</span>
               </div>
-
-              <div
-                dir="ltr"
-                className="
-                  text-[11px]
-                  text-slate-600
-                  break-all
-                  font-mono
-                "
-              >
+              <div dir="ltr" className="text-[11px] text-slate-600 break-all font-mono">
                 {donation.id}
               </div>
             </div>
 
-            {/* תאריך יצירה */}
-            <div
-              className="
-                bg-slate-50
-                rounded-xl
-                border
-                border-slate-200
-                p-4
-              "
-            >
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Calendar className="w-4 h-4 text-slate-400" />
-
-                <span className="text-xs text-slate-400">
-                  נרשם במערכת
-                </span>
+                <span className="text-xs text-slate-400">נרשם במערכת</span>
               </div>
-
               <div className="font-bold text-sm text-slate-800">
                 {createdDate}
               </div>
             </div>
 
-            {/* קובץ */}
-            <div
-              className="
-                bg-slate-50
-                rounded-xl
-                border
-                border-slate-200
-                p-4
-              "
-            >
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-2">
                 <FileText className="w-4 h-4 text-slate-400" />
-
-                <span className="text-xs text-slate-400">
-                  קובץ מצורף
-                </span>
+                <span className="text-xs text-slate-400">קובץ מצורף</span>
               </div>
-
               {donation.file_url ? (
                 <a
                   href={donation.file_url}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className="
-                    inline-flex
-                    items-center
-                    gap-2
-                    text-sm
-                    font-medium
-                    text-blue-600
-                    hover:text-blue-700
-                  "
+                  className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
                 >
                   <FileText className="w-4 h-4" />
                   צפייה בקובץ
@@ -457,41 +360,19 @@ export default function DonationCardModal({
               )}
             </div>
 
-            {/* הערות */}
             {donation.notes && (
-              <div
-                className="
-                  bg-slate-50
-                  rounded-xl
-                  border
-                  border-slate-200
-                  p-4
-                  md:col-span-2
-                "
-              >
+              <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 md:col-span-2">
                 <div className="flex items-center gap-2 mb-2">
                   <StickyNote className="w-4 h-4 text-slate-400" />
-
-                  <span className="text-xs text-slate-400">
-                    הערות
-                  </span>
+                  <span className="text-xs text-slate-400">הערות</span>
                 </div>
-
-                <div
-                  className="
-                    text-sm
-                    text-slate-700
-                    whitespace-pre-wrap
-                    leading-6
-                  "
-                >
+                <div className="text-sm text-slate-700 whitespace-pre-wrap leading-6">
                   {donation.notes}
                 </div>
               </div>
             )}
           </div>
 
-          {/* כפתורים */}
           <div
             className="
               mt-6
@@ -505,67 +386,67 @@ export default function DonationCardModal({
             "
           >
             <div className="flex items-center gap-2">
-              {/* מחיקת תרומה */}
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={isDeleting}
-                className="
-                  bg-red-50
-                  hover:bg-red-100
-                  text-red-600
-                  border
-                  border-red-200
-                  font-medium
-                  px-4
-                  py-2.5
-                  rounded-xl
-                  text-xs
-                  transition
-                  flex
-                  items-center
-                  gap-2
-                  disabled:opacity-50
-                  disabled:cursor-not-allowed
-                "
-              >
-                <Trash2 className="w-4 h-4" />
-
-                {isDeleting
-                  ? 'מוחק...'
-                  : 'מחק תרומה'}
-              </button>
-
-              {/* עריכת תרומה */}
-              {onEdit && (
+              {/* הגנה על מחיקה */}
+              <Protect permId="donations_delete">
                 <button
                   type="button"
-                  onClick={onEdit}
-                  disabled={isDeleting}
+                  onClick={handleDelete}
+                  disabled={isProcessing}
                   className="
-                    bg-blue-600
-                    hover:bg-blue-700
-                    text-white
+                    bg-red-50
+                    hover:bg-red-100
+                    text-red-600
+                    border
+                    border-red-200
                     font-medium
                     px-4
                     py-2.5
                     rounded-xl
                     text-xs
                     transition
+                    flex
+                    items-center
+                    gap-2
                     disabled:opacity-50
                     disabled:cursor-not-allowed
                   "
                 >
-                  ערוך תרומה
+                  <Trash2 className="w-4 h-4" />
+                  {isProcessing ? 'מעבד...' : 'מחק תרומה'}
                 </button>
+              </Protect>
+
+              {/* הגנה על עריכה */}
+              {onEdit && (
+                <Protect permId="donations_edit">
+                  <button
+                    type="button"
+                    onClick={handleEditClick}
+                    disabled={isProcessing}
+                    className="
+                      bg-blue-600
+                      hover:bg-blue-700
+                      text-white
+                      font-medium
+                      px-4
+                      py-2.5
+                      rounded-xl
+                      text-xs
+                      transition
+                      disabled:opacity-50
+                      disabled:cursor-not-allowed
+                    "
+                  >
+                    ערוך תרומה
+                  </button>
+                </Protect>
               )}
             </div>
 
-            {/* סגירה */}
             <button
               type="button"
               onClick={onClose}
-              disabled={isDeleting}
+              disabled={isProcessing}
               className="
                 bg-slate-100
                 hover:bg-slate-200

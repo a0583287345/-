@@ -1,3 +1,5 @@
+'use client';
+
 import { usePermissions } from '@/hooks/usePermissions';
 
 interface ProtectProps {
@@ -8,11 +10,15 @@ interface ProtectProps {
 export function Protect({ permId, children }: ProtectProps) {
   const { hasPermission, loadingPerms } = usePermissions();
 
-  // אם טוען או שאין הרשאה, אל תצייר כלום על המסך
-  if (loadingPerms || !hasPermission(permId)) {
-    return null; 
+  // בזמן טעינת ההרשאות לא מציגים את התוכן
+  if (loadingPerms) {
+    return null;
   }
 
-  // אם יש הרשאה, תצייר את מה שבתוך התגית
+  // אם אין הרשאה – לא מציגים את התוכן
+  if (!hasPermission(permId)) {
+    return null;
+  }
+
   return <>{children}</>;
 }

@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase'; // ודא שהנתיב ל-supabase תקין אצלך
+import { supabase } from '@/lib/supabase';
+import { logActivity } from '@/lib/logger';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -28,18 +29,36 @@ export default function LoginPage() {
     }
 
     if (data.user) {
+      // =====================================================
+      // התחברות מוצלחת - רישום ללוג
+      // =====================================================
+      try {
+        await logActivity(
+          'login',
+          'auth',
+          `המשתמש התחבר למערכת: ${data.user.email || email}`
+        );
+      } catch (logError) {
+        // שגיאה בלוג לא תמנע מהמשתמש להיכנס למערכת
+        console.error('שגיאה ברישום התחברות ללוג:', logError);
+      }
+
       // התחברות מוצלחת - מעבר לדף הראשי
       router.push('/');
-      router.refresh(); // רענון כדי לטעון מחדש מצב משתמש
+      router.refresh();
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8" dir="rtl">
+    <div
+      className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8"
+      dir="rtl"
+    >
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
           התחברות למערכת
         </h2>
+
         <p className="mt-2 text-center text-sm text-gray-600">
           עטרת צבי - ניהול תורמים
         </p>
@@ -58,6 +77,7 @@ export default function LoginPage() {
               <label className="block text-sm font-medium text-gray-700">
                 כתובת אימייל
               </label>
+
               <div className="mt-1">
                 <input
                   type="email"
@@ -74,6 +94,7 @@ export default function LoginPage() {
               <label className="block text-sm font-medium text-gray-700">
                 סיסמה
               </label>
+
               <div className="mt-1">
                 <input
                   type="password"
@@ -91,7 +112,9 @@ export default function LoginPage() {
                 type="submit"
                 disabled={loading}
                 className={`w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
-                  loading ? 'bg-blue-400' : 'bg-blue-600 hover:bg-blue-700'
+                  loading
+                    ? 'bg-blue-400'
+                    : 'bg-blue-600 hover:bg-blue-700'
                 } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
               >
                 {loading ? 'מתחבר...' : 'היכנס'}

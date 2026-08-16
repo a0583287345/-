@@ -77,6 +77,27 @@ export default function DonorFormModal({
   onSuccess,
   donorToEdit,
 }: DonorFormModalProps) {
+  // =====================================================
+  // הרשאות
+  // =====================================================
+
+  const {
+    hasPermission,
+    loadingPerms,
+  } = usePermissions();
+
+  const isEditMode = Boolean(donorToEdit?.id);
+
+  // חשוב:
+  // ההרשאה במסד הנתונים נקראת donors_create
+  const canCreate = hasPermission('donors_create');
+  const canEdit = hasPermission('donors_edit');
+  const canDelete = hasPermission('donors_delete');
+
+  const canSave = isEditMode
+    ? canEdit
+    : canCreate;
+
   const [loading, setLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -92,17 +113,38 @@ export default function DonorFormModal({
 
     if (donorToEdit) {
       setFormData({
-        first_name_he: donorToEdit.first_name_he || '',
-        last_name_he: donorToEdit.last_name_he || '',
-        first_name_en: donorToEdit.first_name_en || '',
-        last_name_en: donorToEdit.last_name_en || '',
-        phone_1: donorToEdit.phone_1 || '',
-        phone_2: donorToEdit.phone_2 || '',
-        email: donorToEdit.email || '',
-        country: donorToEdit.country || 'ישראל',
-        city: donorToEdit.city || '',
-        street: donorToEdit.street || '',
-        house_number: donorToEdit.house_number || '',
+        first_name_he:
+          donorToEdit.first_name_he || '',
+
+        last_name_he:
+          donorToEdit.last_name_he || '',
+
+        first_name_en:
+          donorToEdit.first_name_en || '',
+
+        last_name_en:
+          donorToEdit.last_name_en || '',
+
+        phone_1:
+          donorToEdit.phone_1 || '',
+
+        phone_2:
+          donorToEdit.phone_2 || '',
+
+        email:
+          donorToEdit.email || '',
+
+        country:
+          donorToEdit.country || 'ישראל',
+
+        city:
+          donorToEdit.city || '',
+
+        street:
+          donorToEdit.street || '',
+
+        house_number:
+          donorToEdit.house_number || '',
 
         is_recurring: Boolean(
           donorToEdit.is_recurring
@@ -122,18 +164,64 @@ export default function DonorFormModal({
           ? String(donorToEdit.birthday).slice(0, 10)
           : '',
 
-        yahrzeit_date: donorToEdit.yahrzeit_date
-          ? String(donorToEdit.yahrzeit_date).slice(0, 10)
-          : '',
+        yahrzeit_date:
+          donorToEdit.yahrzeit_date
+            ? String(
+                donorToEdit.yahrzeit_date
+              ).slice(0, 10)
+            : '',
 
-        notes: donorToEdit.notes || '',
+        notes:
+          donorToEdit.notes || '',
       });
     } else {
-      setFormData({ ...emptyFormData });
+      setFormData({
+        ...emptyFormData,
+      });
     }
   }, [donorToEdit, isOpen]);
 
+  // =====================================================
+  // בזמן טעינת הרשאות
+  // =====================================================
+
   if (!isOpen) return null;
+
+  if (loadingPerms) {
+    return (
+      <div
+        className="
+          fixed inset-0
+          z-50
+          flex items-center justify-center
+          bg-slate-900/50
+          backdrop-blur-sm
+          p-4
+        "
+        dir="rtl"
+      >
+        <div
+          className="
+            bg-white
+            rounded-2xl
+            shadow-xl
+            border border-slate-200
+            p-8
+            flex
+            flex-col
+            items-center
+            gap-3
+          "
+        >
+          <Loader2 className="w-7 h-7 text-blue-600 animate-spin" />
+
+          <div className="text-sm font-medium text-slate-700">
+            טוען הרשאות...
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // =====================================================
   // שינוי שדה בטופס
@@ -153,8 +241,31 @@ export default function DonorFormModal({
   // שמירת תורם
   // =====================================================
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(
+    e: React.FormEvent
+  ) {
     e.preventDefault();
+
+    // ===================================================
+    // בדיקת הרשאה
+    // ===================================================
+
+    if (isEditMode) {
+      if (!hasPermission('donors_edit')) {
+        alert('אין לך הרשאה לערוך תורם.');
+        return;
+      }
+    } else {
+      // ההרשאה הנכונה היא donors_create
+      if (!hasPermission('donors_create')) {
+        alert('אין לך הרשאה ליצור תורם חדש.');
+        return;
+      }
+    }
+
+    // ===================================================
+    // בדיקת שם
+    // ===================================================
 
     if (
       !formData.first_name_he.trim() &&
@@ -163,6 +274,7 @@ export default function DonorFormModal({
       alert(
         'נא להזין לפחות שם פרטי או שם משפחה בעברית'
       );
+
       return;
     }
 
@@ -170,7 +282,7 @@ export default function DonorFormModal({
 
     try {
       // =================================================
-      // payload תואם בדיוק לסכמת donors
+      // payload תואם לסכמת donors
       // =================================================
 
       const payload = {
@@ -211,7 +323,9 @@ export default function DonorFormModal({
           Boolean(formData.is_recurring),
 
         has_yissachar_zevulun:
-          Boolean(formData.has_yissachar_zevulun),
+          Boolean(
+            formData.has_yissachar_zevulun
+          ),
 
         yissachar_zevulun_name:
           formData.has_yissachar_zevulun &&
@@ -233,52 +347,79 @@ export default function DonorFormModal({
       };
 
       let error = null;
-    const donorFullName = `${formData.first_name_he || ''} ${formData.last_name_he || ''}`.trim() || 'תורם';
 
-    if (donorToEdit?.id) {
-      // ===============================================
+      const donorFullName =
+        `${formData.first_name_he || ''} ${
+          formData.last_name_he || ''
+        }`.trim() || 'תורם';
+
+      // =================================================
       // עדכון תורם קיים
-      // ===============================================
+      // =================================================
 
-      const res = await supabase
-        .from('donors')
-        .update(payload)
-        .eq('id', donorToEdit.id);
+      if (donorToEdit?.id) {
+        // בדיקת הרשאה נוספת ממש לפני UPDATE
+        if (!hasPermission('donors_edit')) {
+          alert('אין לך הרשאה לערוך תורם.');
+          return;
+        }
 
-      error = res.error;
+        const res = await supabase
+          .from('donors')
+          .update(payload)
+          .eq('id', donorToEdit.id);
 
-      if (!error) {
-        // ===================================================
-        // 📝 רישום ביומן הפעילות (Audit Log) - עדכון
-        // ===================================================
-        await logActivity(
-          'UPDATE',
-          'donors',
-          `ערך תורם קיים בשם ${donorFullName}`
-        );
+        error = res.error;
+
+        // =================================================
+        // Audit Log - UPDATE
+        // =================================================
+
+        if (!error) {
+          await logActivity(
+            'UPDATE',
+            'donors',
+            `ערך תורם קיים בשם ${donorFullName}`
+          );
+        }
       }
-    } else {
-      // ===============================================
+
+      // =================================================
       // יצירת תורם חדש
-      // ===============================================
+      // =================================================
 
-      const res = await supabase
-        .from('donors')
-        .insert([payload]);
+      else {
+        // בדיקת הרשאה נוספת ממש לפני INSERT
+        if (!hasPermission('donors_create')) {
+          alert(
+            'אין לך הרשאה ליצור תורם חדש.'
+          );
 
-      error = res.error;
+          return;
+        }
 
-      if (!error) {
-        // ===================================================
-        // 📝 רישום ביומן הפעילות (Audit Log) - יצירה
-        // ===================================================
-        await logActivity(
-          'INSERT',
-          'donors',
-          `יצר תורם חדש בשם ${donorFullName}`
-        );
+        const res = await supabase
+          .from('donors')
+          .insert([payload]);
+
+        error = res.error;
+
+        // =================================================
+        // Audit Log - INSERT
+        // =================================================
+
+        if (!error) {
+          await logActivity(
+            'INSERT',
+            'donors',
+            `יצר תורם חדש בשם ${donorFullName}`
+          );
+        }
       }
-    }
+
+      // =================================================
+      // טיפול בשגיאה
+      // =================================================
 
       if (error) {
         console.error(
@@ -311,11 +452,20 @@ export default function DonorFormModal({
   }
 
   // =====================================================
-// מחיקת תורם
+  // מחיקת תורם
   // =====================================================
 
   async function handleDeleteDonor() {
     if (!donorToEdit?.id) return;
+
+    // ===================================================
+    // בדיקת הרשאה למחיקה
+    // ===================================================
+
+    if (!hasPermission('donors_delete')) {
+      alert('אין לך הרשאה למחוק תורם.');
+      return;
+    }
 
     if (isDeleting || loading) return;
 
@@ -324,18 +474,23 @@ export default function DonorFormModal({
         donorToEdit.last_name_he || ''
       }`.trim() || 'התורם';
 
-    // ---------------------------------------------------
+    // ===================================================
     // בדיקה כמה תרומות קיימות לתורם
-    // ---------------------------------------------------
+    // ===================================================
 
-    const { count, error: countError } =
-      await supabase
-        .from('donations')
-        .select('*', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('donor_id', donorToEdit.id);
+    const {
+      count,
+      error: countError,
+    } = await supabase
+      .from('donations')
+      .select('*', {
+        count: 'exact',
+        head: true,
+      })
+      .eq(
+        'donor_id',
+        donorToEdit.id
+      );
 
     if (countError) {
       console.error(
@@ -352,9 +507,9 @@ export default function DonorFormModal({
 
     const donationCount = count || 0;
 
-    // ---------------------------------------------------
+    // ===================================================
     // הודעת אישור
-    // ---------------------------------------------------
+    // ===================================================
 
     let confirmationMessage = '';
 
@@ -375,21 +530,36 @@ export default function DonorFormModal({
     }
 
     const confirmed =
-      window.confirm(confirmationMessage);
+      window.confirm(
+        confirmationMessage
+      );
 
     if (!confirmed) return;
 
-    // ---------------------------------------------------
+    // ===================================================
     // ביצוע המחיקה
-    // ---------------------------------------------------
+    // ===================================================
 
     setIsDeleting(true);
 
     try {
-      const { error } = await supabase
-        .from('donors')
-        .delete()
-        .eq('id', donorToEdit.id);
+      // בדיקת הרשאה נוספת ממש לפני DELETE
+      if (!hasPermission('donors_delete')) {
+        alert(
+          'אין לך הרשאה למחוק תורם.'
+        );
+
+        return;
+      }
+
+      const { error } =
+        await supabase
+          .from('donors')
+          .delete()
+          .eq(
+            'id',
+            donorToEdit.id
+          );
 
       if (error) {
         console.error(
@@ -405,9 +575,10 @@ export default function DonorFormModal({
         return;
       }
 
-      // ===================================================
-      // 📝 רישום ביומן הפעילות (Audit Log)
-      // ===================================================
+      // =================================================
+      // Audit Log - DELETE
+      // =================================================
+
       await logActivity(
         'DELETE',
         'donors',
@@ -428,6 +599,144 @@ export default function DonorFormModal({
     } finally {
       setIsDeleting(false);
     }
+  }
+
+  // =====================================================
+  // חסימת חלון לפי הרשאה
+  // =====================================================
+
+  if (!canSave) {
+    return (
+      <div
+        className="
+          fixed inset-0
+          z-50
+          flex items-center justify-center
+          bg-slate-900/50
+          backdrop-blur-sm
+          p-4
+        "
+        dir="rtl"
+      >
+        <div
+          className="
+            bg-white
+            w-full
+            max-w-md
+            rounded-2xl
+            shadow-xl
+            border border-slate-200
+            overflow-hidden
+          "
+        >
+          {/* כותרת */}
+
+          <div
+            className="
+              flex items-center justify-between
+              p-5
+              border-b border-slate-100
+              bg-slate-50
+            "
+          >
+            <h2
+              className="
+                text-lg
+                font-bold
+                text-slate-800
+                flex
+                items-center
+                gap-2
+              "
+            >
+              <User className="w-5 h-5 text-blue-600" />
+
+              {isEditMode
+                ? 'עריכת פרטי תורם'
+                : 'הוספת תורם חדש'}
+            </h2>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="
+                p-1
+                text-slate-400
+                hover:text-slate-600
+                rounded-lg
+                hover:bg-slate-200/50
+                transition
+              "
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* הודעת חסימה */}
+
+          <div className="p-6 text-center">
+            <div
+              className="
+                mx-auto
+                w-12
+                h-12
+                rounded-full
+                bg-red-50
+                text-red-500
+                flex
+                items-center
+                justify-center
+                mb-4
+              "
+            >
+              <X className="w-6 h-6" />
+            </div>
+
+            <h3
+              className="
+                text-base
+                font-bold
+                text-slate-800
+                mb-2
+              "
+            >
+              אין הרשאה לביצוע פעולה זו
+            </h3>
+
+            <p
+              className="
+                text-sm
+                text-slate-500
+                leading-6
+              "
+            >
+              {isEditMode
+                ? 'אין לך הרשאה לערוך תורמים.'
+                : 'אין לך הרשאה ליצור תורמים חדשים.'}
+            </p>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="
+                mt-5
+                px-5
+                py-2
+                bg-slate-800
+                hover:bg-slate-900
+                text-white
+                rounded-xl
+                text-sm
+                font-medium
+                transition
+              "
+            >
+              סגור
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   // =====================================================
@@ -492,7 +801,10 @@ export default function DonorFormModal({
           <button
             type="button"
             onClick={onClose}
-            disabled={loading || isDeleting}
+            disabled={
+              loading ||
+              isDeleting
+            }
             className="
               p-1
               text-slate-400
@@ -522,16 +834,31 @@ export default function DonorFormModal({
             {/* --------------------------------------------- */}
 
             <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800 border-b pb-1">
+              <h3
+                className="
+                  text-sm
+                  font-semibold
+                  text-slate-800
+                  border-b
+                  pb-1
+                "
+              >
                 פרטי זיהוי
               </h3>
 
               <div className="grid grid-cols-2 gap-3">
-                {/* שם פרטי עברית */}
-
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                    "
+                  >
                     שם פרטי (עברית)
+
                     <span className="text-red-500">
                       {' '}*
                     </span>
@@ -540,7 +867,9 @@ export default function DonorFormModal({
                   <input
                     type="text"
                     required
-                    value={formData.first_name_he}
+                    value={
+                      formData.first_name_he
+                    }
                     onChange={(e) =>
                       updateField(
                         'first_name_he',
@@ -562,16 +891,24 @@ export default function DonorFormModal({
                   />
                 </div>
 
-                {/* שם משפחה עברית */}
-
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                    "
+                  >
                     שם משפחה (עברית)
                   </label>
 
                   <input
                     type="text"
-                    value={formData.last_name_he}
+                    value={
+                      formData.last_name_he
+                    }
                     onChange={(e) =>
                       updateField(
                         'last_name_he',
@@ -593,17 +930,25 @@ export default function DonorFormModal({
                   />
                 </div>
 
-                {/* שם פרטי אנגלית */}
-
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                    "
+                  >
                     שם פרטי (אנגלית)
                   </label>
 
                   <input
                     type="text"
                     dir="ltr"
-                    value={formData.first_name_en}
+                    value={
+                      formData.first_name_en
+                    }
                     onChange={(e) =>
                       updateField(
                         'first_name_en',
@@ -626,17 +971,25 @@ export default function DonorFormModal({
                   />
                 </div>
 
-                {/* שם משפחה אנגלית */}
-
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                    "
+                  >
                     שם משפחה (אנגלית)
                   </label>
 
                   <input
                     type="text"
                     dir="ltr"
-                    value={formData.last_name_en}
+                    value={
+                      formData.last_name_en
+                    }
                     onChange={(e) =>
                       updateField(
                         'last_name_en',
@@ -666,22 +1019,48 @@ export default function DonorFormModal({
             {/* --------------------------------------------- */}
 
             <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800 border-b pb-1">
+              <h3
+                className="
+                  text-sm
+                  font-semibold
+                  text-slate-800
+                  border-b
+                  pb-1
+                "
+              >
                 תאריכים
               </h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* יום הולדת */}
-
+              <div
+                className="
+                  grid
+                  grid-cols-1
+                  md:grid-cols-2
+                  gap-3
+                "
+              >
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                      flex
+                      items-center
+                      gap-1
+                    "
+                  >
                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
                     תאריך לידה
                   </label>
 
                   <input
                     type="date"
-                    value={formData.birthday}
+                    value={
+                      formData.birthday
+                    }
                     onChange={(e) =>
                       updateField(
                         'birthday',
@@ -702,17 +1081,28 @@ export default function DonorFormModal({
                   />
                 </div>
 
-                {/* יארצייט */}
-
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                      flex
+                      items-center
+                      gap-1
+                    "
+                  >
                     <Calendar className="w-3.5 h-3.5 text-slate-400" />
                     תאריך יארצייט
                   </label>
 
                   <input
                     type="date"
-                    value={formData.yahrzeit_date}
+                    value={
+                      formData.yahrzeit_date
+                    }
                     onChange={(e) =>
                       updateField(
                         'yahrzeit_date',
@@ -740,15 +1130,39 @@ export default function DonorFormModal({
             {/* --------------------------------------------- */}
 
             <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800 border-b pb-1">
+              <h3
+                className="
+                  text-sm
+                  font-semibold
+                  text-slate-800
+                  border-b
+                  pb-1
+                "
+              >
                 פרטי התקשרות
               </h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {/* טלפון ראשי */}
-
+              <div
+                className="
+                  grid
+                  grid-cols-1
+                  md:grid-cols-3
+                  gap-3
+                "
+              >
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                      flex
+                      items-center
+                      gap-1
+                    "
+                  >
                     <Phone className="w-3.5 h-3.5 text-slate-400" />
                     טלפון ראשי
                   </label>
@@ -756,7 +1170,9 @@ export default function DonorFormModal({
                   <input
                     type="tel"
                     dir="ltr"
-                    value={formData.phone_1}
+                    value={
+                      formData.phone_1
+                    }
                     onChange={(e) =>
                       updateField(
                         'phone_1',
@@ -779,10 +1195,19 @@ export default function DonorFormModal({
                   />
                 </div>
 
-                {/* טלפון משני */}
-
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                      flex
+                      items-center
+                      gap-1
+                    "
+                  >
                     <Phone className="w-3.5 h-3.5 text-slate-400" />
                     טלפון משני
                   </label>
@@ -790,7 +1215,9 @@ export default function DonorFormModal({
                   <input
                     type="tel"
                     dir="ltr"
-                    value={formData.phone_2}
+                    value={
+                      formData.phone_2
+                    }
                     onChange={(e) =>
                       updateField(
                         'phone_2',
@@ -813,10 +1240,19 @@ export default function DonorFormModal({
                   />
                 </div>
 
-                {/* אימייל */}
-
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                      flex
+                      items-center
+                      gap-1
+                    "
+                  >
                     <Mail className="w-3.5 h-3.5 text-slate-400" />
                     אימייל
                   </label>
@@ -824,7 +1260,9 @@ export default function DonorFormModal({
                   <input
                     type="email"
                     dir="ltr"
-                    value={formData.email}
+                    value={
+                      formData.email
+                    }
                     onChange={(e) =>
                       updateField(
                         'email',
@@ -854,22 +1292,48 @@ export default function DonorFormModal({
             {/* --------------------------------------------- */}
 
             <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800 border-b pb-1">
+              <h3
+                className="
+                  text-sm
+                  font-semibold
+                  text-slate-800
+                  border-b
+                  pb-1
+                "
+              >
                 כתובת מגורים
               </h3>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {/* ארץ */}
-
+              <div
+                className="
+                  grid
+                  grid-cols-2
+                  md:grid-cols-4
+                  gap-3
+                "
+              >
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                      flex
+                      items-center
+                      gap-1
+                    "
+                  >
                     <Globe className="w-3.5 h-3.5 text-slate-400" />
                     ארץ
                   </label>
 
                   <input
                     type="text"
-                    value={formData.country}
+                    value={
+                      formData.country
+                    }
                     onChange={(e) =>
                       updateField(
                         'country',
@@ -891,17 +1355,28 @@ export default function DonorFormModal({
                   />
                 </div>
 
-                {/* עיר */}
-
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                      flex
+                      items-center
+                      gap-1
+                    "
+                  >
                     <MapPin className="w-3.5 h-3.5 text-slate-400" />
                     עיר
                   </label>
 
                   <input
                     type="text"
-                    value={formData.city}
+                    value={
+                      formData.city
+                    }
                     onChange={(e) =>
                       updateField(
                         'city',
@@ -923,16 +1398,24 @@ export default function DonorFormModal({
                   />
                 </div>
 
-                {/* רחוב */}
-
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                    "
+                  >
                     רחוב
                   </label>
 
                   <input
                     type="text"
-                    value={formData.street}
+                    value={
+                      formData.street
+                    }
                     onChange={(e) =>
                       updateField(
                         'street',
@@ -954,16 +1437,24 @@ export default function DonorFormModal({
                   />
                 </div>
 
-                {/* מספר בית */}
-
                 <div>
-                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                  <label
+                    className="
+                      block
+                      text-xs
+                      font-medium
+                      text-slate-700
+                      mb-1
+                    "
+                  >
                     מספר בית
                   </label>
 
                   <input
                     type="text"
-                    value={formData.house_number}
+                    value={
+                      formData.house_number
+                    }
                     onChange={(e) =>
                       updateField(
                         'house_number',
@@ -992,19 +1483,40 @@ export default function DonorFormModal({
             {/* --------------------------------------------- */}
 
             <section className="space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800 border-b pb-1">
+              <h3
+                className="
+                  text-sm
+                  font-semibold
+                  text-slate-800
+                  border-b
+                  pb-1
+                "
+              >
                 ניהול
               </h3>
 
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
+                <label
+                  className="
+                    block
+                    text-xs
+                    font-medium
+                    text-slate-700
+                    mb-1
+                    flex
+                    items-center
+                    gap-1
+                  "
+                >
                   <Users className="w-3.5 h-3.5 text-slate-400" />
                   איש קשר בארגון
                 </label>
 
                 <input
                   type="text"
-                  value={formData.connected_contact}
+                  value={
+                    formData.connected_contact
+                  }
                   onChange={(e) =>
                     updateField(
                       'connected_contact',
@@ -1031,13 +1543,32 @@ export default function DonorFormModal({
             {/* הו"ק + יששכר וזבולון */}
             {/* --------------------------------------------- */}
 
-            <section className="p-4 bg-slate-50 border rounded-xl space-y-4">
-              {/* הוראת קבע */}
-
-              <label className="flex items-center gap-2.5 text-sm font-medium text-slate-700 cursor-pointer select-none">
+            <section
+              className="
+                p-4
+                bg-slate-50
+                border
+                rounded-xl
+                space-y-4
+              "
+            >
+              <label
+                className="
+                  flex
+                  items-center
+                  gap-2.5
+                  text-sm
+                  font-medium
+                  text-slate-700
+                  cursor-pointer
+                  select-none
+                "
+              >
                 <input
                   type="checkbox"
-                  checked={formData.is_recurring}
+                  checked={
+                    formData.is_recurring
+                  }
                   onChange={(e) =>
                     updateField(
                       'is_recurring',
@@ -1045,7 +1576,8 @@ export default function DonorFormModal({
                     )
                   }
                   className="
-                    w-4 h-4
+                    w-4
+                    h-4
                     rounded
                     border-slate-300
                     text-blue-600
@@ -1053,16 +1585,38 @@ export default function DonorFormModal({
                   "
                 />
 
-                <span className="flex items-center gap-1.5">
+                <span
+                  className="
+                    flex
+                    items-center
+                    gap-1.5
+                  "
+                >
                   <Heart className="w-4 h-4 text-emerald-600" />
                   תורם בהוראת קבע פעילה (הו"ק)
                 </span>
               </label>
 
-              <div className="space-y-3 pt-3 border-t border-slate-200/60">
-                {/* יששכר וזבולון */}
-
-                <label className="flex items-center gap-2.5 text-sm font-medium text-slate-700 cursor-pointer select-none">
+              <div
+                className="
+                  space-y-3
+                  pt-3
+                  border-t
+                  border-slate-200/60
+                "
+              >
+                <label
+                  className="
+                    flex
+                    items-center
+                    gap-2.5
+                    text-sm
+                    font-medium
+                    text-slate-700
+                    cursor-pointer
+                    select-none
+                  "
+                >
                   <input
                     type="checkbox"
                     checked={
@@ -1075,7 +1629,8 @@ export default function DonorFormModal({
                       )
                     }
                     className="
-                      w-4 h-4
+                      w-4
+                      h-4
                       rounded
                       border-slate-300
                       text-blue-600
@@ -1083,7 +1638,13 @@ export default function DonorFormModal({
                     "
                   />
 
-                  <span className="flex items-center gap-1.5">
+                  <span
+                    className="
+                      flex
+                      items-center
+                      gap-1.5
+                    "
+                  >
                     <BookOpen className="w-4 h-4 text-amber-600" />
                     קיים הסכם יששכר וזבולון
                   </span>
@@ -1092,7 +1653,15 @@ export default function DonorFormModal({
                 {formData.has_yissachar_zevulun && (
                   <div className="pt-1 pr-7">
                     <div>
-                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                      <label
+                        className="
+                          block
+                          text-xs
+                          font-medium
+                          text-slate-600
+                          mb-1
+                        "
+                      >
                         שם האברך בכולל
                       </label>
 
@@ -1132,14 +1701,27 @@ export default function DonorFormModal({
             {/* --------------------------------------------- */}
 
             <section>
-              <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
+              <label
+                className="
+                  block
+                  text-xs
+                  font-medium
+                  text-slate-700
+                  mb-1
+                  flex
+                  items-center
+                  gap-1
+                "
+              >
                 <FileText className="w-3.5 h-3.5 text-slate-400" />
                 הערות כלליות
               </label>
 
               <textarea
                 rows={4}
-                value={formData.notes}
+                value={
+                  formData.notes
+                }
                 onChange={(e) =>
                   updateField(
                     'notes',
@@ -1175,20 +1757,24 @@ export default function DonorFormModal({
             justify-between
             gap-3
             p-5
-            border-t border-slate-100
+            border-t
+            border-slate-100
             bg-slate-50
             shrink-0
           "
         >
-          {/* --------------------------------------------- */}
-          {/* מחיקה — רק בעריכת תורם */}
-          {/* --------------------------------------------- */}
+          {/* מחיקה */}
 
-          {donorToEdit ? (
+          {donorToEdit && canDelete ? (
             <button
               type="button"
-              onClick={handleDeleteDonor}
-              disabled={loading || isDeleting}
+              onClick={
+                handleDeleteDonor
+              }
+              disabled={
+                loading ||
+                isDeleting
+              }
               className="
                 px-4
                 py-2
@@ -1225,15 +1811,22 @@ export default function DonorFormModal({
             <div />
           )}
 
-          {/* --------------------------------------------- */}
           {/* ביטול + שמירה */}
-          {/* --------------------------------------------- */}
 
-          <div className="flex items-center gap-3">
+          <div
+            className="
+              flex
+              items-center
+              gap-3
+            "
+          >
             <button
               type="button"
               onClick={onClose}
-              disabled={loading || isDeleting}
+              disabled={
+                loading ||
+                isDeleting
+              }
               className="
                 px-4
                 py-2
@@ -1250,42 +1843,47 @@ export default function DonorFormModal({
               ביטול
             </button>
 
-            <button
-              type="submit"
-              form="donor-form"
-              disabled={loading || isDeleting}
-              className="
-                px-6
-                py-2
-                bg-blue-600
-                hover:bg-blue-700
-                text-white
-                rounded-xl
-                text-sm
-                font-medium
-                flex
-                items-center
-                gap-2
-                transition
-                shadow-sm
-                disabled:opacity-50
-                disabled:cursor-not-allowed
-              "
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  שומר...
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  {donorToEdit
-                    ? 'עדכן תורם'
-                    : 'שמור תורם'}
-                </>
-              )}
-            </button>
+            {canSave && (
+              <button
+                type="submit"
+                form="donor-form"
+                disabled={
+                  loading ||
+                  isDeleting
+                }
+                className="
+                  px-6
+                  py-2
+                  bg-blue-600
+                  hover:bg-blue-700
+                  text-white
+                  rounded-xl
+                  text-sm
+                  font-medium
+                  flex
+                  items-center
+                  gap-2
+                  transition
+                  shadow-sm
+                  disabled:opacity-50
+                  disabled:cursor-not-allowed
+                "
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    שומר...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    {donorToEdit
+                      ? 'עדכן תורם'
+                      : 'שמור תורם'}
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>

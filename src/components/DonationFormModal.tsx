@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Donor, Donation } from '@/types/donor';
 import { logActivity } from '@/lib/logger';
+import { usePermissions } from '@/hooks/usePermissions';
 import {
   X,
   Save,
@@ -25,9 +26,8 @@ interface DonationFormModalProps {
   onClose: () => void;
   onSuccess: () => void;
   preselectedDonorId?: string | null;
-
-  // תרומה קיימת לעריכה
   editingDonation?: Donation | null;
+  canEdit?: boolean;
 }
 
 export default function DonationFormModal({
@@ -36,7 +36,10 @@ export default function DonationFormModal({
   onSuccess,
   preselectedDonorId,
   editingDonation = null,
+  canEdit = true,
 }: DonationFormModalProps) {
+  const { hasPermission, loadingPerms } = usePermissions();
+
   const [loading, setLoading] = useState(false);
   const [donors, setDonors] = useState<Donor[]>([]);
   const [donorSearch, setDonorSearch] = useState('');
@@ -62,10 +65,11 @@ export default function DonationFormModal({
   });
 
   const isEditMode = !!editingDonation;
+  
+  // בדיקת הרשאות משולבת (גם ברמת הקומפוננטה וגם מול ההרשאות של המשתמש)
+  const hasFormPermission = isEditMode ? hasPermission('donations_edit') : hasPermission('donations_create');
+  const isActionAllowed = canEdit && hasFormPermission;
 
-  // ==========================================
-  // איפוס / טעינת נתוני התרומה
-  // ==========================================
   useEffect(() => {
     if (!isOpen) return;
 
@@ -73,7 +77,6 @@ export default function DonationFormModal({
     setFilesToUpload([]);
 
     if (editingDonation) {
-      // מצב עריכה - טוענים את התרומה הקיימת
       setFormData({
         id: editingDonation.id,
         donor_id: editingDonation.donor_id || '',
@@ -90,7 +93,6 @@ export default function DonationFormModal({
 
       setDonorSearch('');
     } else {
-      // מצב יצירת תרומה חדשה
       setFormData({
         donor_id: preselectedDonorId || '',
         amount: 0,
@@ -103,9 +105,6 @@ export default function DonationFormModal({
     }
   }, [isOpen, preselectedDonorId, editingDonation]);
 
-  // ==========================================
-  // סגירת רשימת התורמים בלחיצה מחוץ לאלמנט
-  // ==========================================
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -117,14 +116,10 @@ export default function DonationFormModal({
     }
 
     document.addEventListener('mousedown', handleClickOutside);
-
     return () =>
       document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // ==========================================
-  // טעינת תורמים
-  // ==========================================
   async function fetchDonors() {
     const { data, error } = await supabase
       .from('donors')
@@ -139,13 +134,11 @@ export default function DonationFormModal({
     if (data) {
       setDonors(data as Donor[]);
 
-      // תורם של תרומה קיימת / תורם שנבחר מראש
       const donorId =
         editingDonation?.donor_id || preselectedDonorId;
 
       if (donorId) {
         const found = data.find((d) => d.id === donorId);
-
         if (found) {
           setDonorSearch(
             `${found.first_name_he || ''} ${
@@ -163,13 +156,8 @@ export default function DonationFormModal({
 
   const filteredDonors = donors.filter((d) => {
     const query = donorSearch.toLowerCase();
-
-    const nameHe =
-      `${d.first_name_he || ''} ${d.last_name_he || ''}`.toLowerCase();
-
-    const nameEn =
-      `${d.first_name_en || ''} ${d.last_name_en || ''}`.toLowerCase();
-
+    const nameHe = `${d.first_name_he || ''} ${d.last_name_he || ''}`.toLowerCase();
+    const nameEn = `${d.first_name_en || ''} ${d.last_name_en || ''}`.toLowerCase();
     const phone = `${d.phone_1 || ''} ${d.phone_2 || ''}`;
 
     return (
@@ -179,10 +167,9 @@ export default function DonationFormModal({
     );
   });
 
-  // ==========================================
-  // בחירת תורם
-  // ==========================================
   function handleSelectDonor(donor: Donor) {
+    if (!isActionAllowed) return;
+
     setFormData((prev) => ({
       ...prev,
       donor_id: donor.id,
@@ -197,41 +184,43 @@ export default function DonationFormModal({
     setShowDonorDropdown(false);
   }
 
-  // ==========================================
-  // בחירת קבצים
-  // ==========================================
-  function handleFileSelect(
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    if (!e.target.files) return;
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!isActionAllowed || !e.target.files) return;
+
+    if (!hasPermission('documents_upload')) {
+      alert('אין לך הרשאה להעלות מסמכים!');
+      e.target.value = '';
+      return;
+    }
 
     const selected = Array.from(e.target.files);
-
     const newFiles = selected.map((file) => ({
       file,
       name: file.name,
     }));
 
     setFilesToUpload((prev) => [...prev, ...newFiles]);
-
-    // מאפשר לבחור שוב את אותו קובץ
     e.target.value = '';
   }
 
-  // ==========================================
-  // הסרת קובץ מהרשימה לפני שמירה
-  // ==========================================
   function removeFile(index: number) {
-    setFilesToUpload((prev) =>
-      prev.filter((_, i) => i !== index)
-    );
+    if (!isActionAllowed) return;
+    setFilesToUpload((prev) => prev.filter((_, i) => i !== index));
   }
 
-  // ==========================================
-  // שמירת תרומה + העלאת מסמכים
-  // ==========================================
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    // חסימה נוספת בפונקציית השמירה
+    if (isEditMode && !hasPermission('donations_edit')) {
+      alert('אין לך הרשאה לערוך תרומות!');
+      return;
+    }
+
+    if (!isEditMode && !hasPermission('donations_create')) {
+      alert('אין לך הרשאה ליצור תרומות!');
+      return;
+    }
 
     if (!formData.amount || formData.amount <= 0) {
       alert('נא להזין סכום תרומה תקין');
@@ -241,7 +230,6 @@ export default function DonationFormModal({
     setLoading(true);
 
     const donorId = formData.donor_id || null;
-
     const payload = {
       donor_id: donorId,
       amount: Number(formData.amount),
@@ -254,12 +242,14 @@ export default function DonationFormModal({
       notes: formData.notes || null,
     };
 
+    const selectedDonor = donors.find((d) => d.id === donorId);
+    const donorNameForLog = selectedDonor 
+      ? `${selectedDonor.first_name_he || ''} ${selectedDonor.last_name_he || ''}`.trim()
+      : 'אנונימי / ללא שיוך';
+
     let donationId: string;
 
     try {
-      // ==========================================
-      // עריכת תרומה קיימת
-      // ==========================================
       if (isEditMode && editingDonation?.id) {
         const { data: updatedDonation, error } = await supabase
           .from('donations')
@@ -269,17 +259,18 @@ export default function DonationFormModal({
           .single();
 
         if (error || !updatedDonation) {
-          throw new Error(
-            'שגיאה בעדכון התרומה: ' +
-              (error?.message || 'לא נמצאה התרומה')
-          );
+          throw new Error('שגיאה בעדכון התרומה: ' + (error?.message || 'לא נמצאה התרומה'));
         }
 
         donationId = updatedDonation.id;
+
+        await logActivity(
+          'update',
+          'donations',
+          `עודכנה תרומה על סך ${payload.amount} ${payload.currency} עבור: ${donorNameForLog}`
+        );
+
       } else {
-        // ==========================================
-        // יצירת תרומה חדשה
-        // ==========================================
         const { data: insertedDonation, error } = await supabase
           .from('donations')
           .insert([payload])
@@ -287,161 +278,91 @@ export default function DonationFormModal({
           .single();
 
         if (error || !insertedDonation) {
-          throw new Error(
-            'שגיאה ברישום תרומה: ' +
-              (error?.message || 'לא ניתן ליצור את התרומה')
-          );
+          throw new Error('שגיאה ברישום תרומה: ' + (error?.message || 'לא ניתן ליצור את התרומה'));
         }
 
         donationId = insertedDonation.id;
+
+        await logActivity(
+          'create',
+          'donations',
+          `נרשמה תרומה חדשה על סך ${payload.amount} ${payload.currency} עבור: ${donorNameForLog}`
+        );
       }
 
-      // ==========================================
-      // העלאת קבצים חדשים
-      // ==========================================
       if (filesToUpload.length > 0) {
         setUploadingFiles(true);
 
         for (const item of filesToUpload) {
-          // סיומת הקובץ
-          const fileExt =
-            item.file.name.includes('.')
-              ? item.file.name
-                  .split('.')
-                  .pop()
-                  ?.toLowerCase() || 'file'
+          const fileExt = item.file.name.includes('.')
+              ? item.file.name.split('.').pop()?.toLowerCase() || 'file'
               : 'file';
 
-          // מזהה ייחודי
-          const uniqueId =
-            typeof crypto !== 'undefined' &&
-            crypto.randomUUID
+          const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID
               ? crypto.randomUUID()
-              : `${Date.now()}-${Math.random()
-                  .toString(36)
-                  .substring(2, 7)}`;
+              : `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
-          // נתיב הקובץ ב-Storage
           const filePath = `donations/${donationId}/${uniqueId}.${fileExt}`;
 
-          console.log('מעלה קובץ:', {
-            fileName: item.name,
-            filePath,
-            donationId,
-            donorId,
-          });
-
-          // ==========================================
-          // 1. העלאת הקובץ ל-Storage
-          // ==========================================
-          const { error: uploadError } =
-            await supabase.storage
+          const { error: uploadError } = await supabase.storage
               .from('attachments')
               .upload(filePath, item.file, {
                 cacheControl: '3600',
                 upsert: false,
               });
 
-          if (uploadError) {
-            console.error(
-              'שגיאה בהעלאת קובץ ל-Storage:',
-              uploadError
-            );
+          if (uploadError) throw new Error(`שגיאה בהעלאת הקובץ "${item.name}": ${uploadError.message}`);
 
-            throw new Error(
-              `שגיאה בהעלאת הקובץ "${item.name}": ${uploadError.message}`
-            );
-          }
-
-          // ==========================================
-          // 2. קבלת URL ציבורי
-          // ==========================================
-          const { data: publicUrlData } =
-            supabase.storage
+          const { data: publicUrlData } = supabase.storage
               .from('attachments')
               .getPublicUrl(filePath);
 
           const publicUrl = publicUrlData?.publicUrl;
+          if (!publicUrl) throw new Error(`לא ניתן לקבל כתובת לקובץ "${item.name}"`);
 
-          if (!publicUrl) {
-            throw new Error(
-              `לא ניתן לקבל כתובת לקובץ "${item.name}"`
-            );
-          }
-
-          console.log('URL שהתקבל:', publicUrl);
-
-          // ==========================================
-          // 3. שמירת פרטי הקובץ בטבלת donor_documents
-          // ==========================================
-          const { error: documentError } =
-            await supabase.from('donor_documents').insert([
-              {
+          const { error: documentError } = await supabase.from('donor_documents').insert([{
                 donor_id: donorId,
                 donation_id: donationId,
                 file_name: item.name,
                 file_url: publicUrl,
                 file_type: item.file.type || null,
-              },
-            ]);
+          }]);
 
-          if (documentError) {
-            console.error(
-              'שגיאה בשמירת המסמך במסד הנתונים:',
-              documentError
-            );
+          if (documentError) throw new Error(`הקובץ הועלה אך לא נשמר ברשימת המסמכים: ${documentError.message}`);
 
-            throw new Error(
-              `הקובץ "${item.name}" הועלה אך לא נשמר ברשימת המסמכים: ${documentError.message}`
-            );
-          }
-
-          console.log(
-            `הקובץ "${item.name}" נשמר בהצלחה`
+          await logActivity(
+            'create',
+            'donor_documents',
+            `הועלה מסמך חדש: "${item.name}" עבור תרומה של: ${donorNameForLog}`
           );
         }
 
         setUploadingFiles(false);
       }
 
-      // ==========================================
-      // סיום מוצלח
-      // ==========================================
       setLoading(false);
       setUploadingFiles(false);
-
       onSuccess();
       onClose();
+      
     } catch (error: any) {
       console.error('שגיאה בשמירת התרומה:', error);
-
       setUploadingFiles(false);
       setLoading(false);
-
-      alert(
-        error?.message ||
-          (isEditMode
-            ? 'אירעה שגיאה בעדכון התרומה'
-            : 'אירעה שגיאה ברישום התרומה')
-      );
+      alert(error?.message || (isEditMode ? 'אירעה שגיאה בעדכון התרומה' : 'אירעה שגיאה ברישום התרומה'));
     }
   }
 
-  const isBusy = loading || uploadingFiles;
+  const isBusy = loading || uploadingFiles || loadingPerms;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4 overflow-y-auto">
       <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-slate-200 overflow-hidden my-8">
-        {/* כותרת */}
         <div className="flex items-center justify-between p-5 border-b border-slate-100 bg-slate-50">
           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
             <DollarSign className="w-5 h-5 text-emerald-600" />
-
-            {isEditMode
-              ? 'עריכת תרומה'
-              : 'רישום תרומה חדשה'}
+            {isEditMode ? 'עריכת תרומה' : 'רישום תרומה חדשה'}
           </h2>
-
           <button
             onClick={onClose}
             disabled={isBusy}
@@ -451,65 +372,43 @@ export default function DonationFormModal({
           </button>
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="p-6 space-y-4"
-        >
-          {/* תורם */}
-          <div
-            className="relative"
-            ref={dropdownRef}
-          >
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="relative" ref={dropdownRef}>
             <label className="block text-xs font-medium text-slate-700 mb-1">
               שיוך לתורם (חפש או בחר מהרשימה)
             </label>
-
             <div className="relative">
               <input
                 type="text"
                 placeholder="הקלד שם או טלפון לבחירה..."
                 value={donorSearch}
-                onFocus={() =>
-                  setShowDonorDropdown(true)
-                }
+                disabled={!isActionAllowed || isBusy}
+                onFocus={() => setShowDonorDropdown(true)}
                 onChange={(e) => {
                   setDonorSearch(e.target.value);
                   setShowDonorDropdown(true);
-
                   if (!e.target.value) {
-                    setFormData((prev) => ({
-                      ...prev,
-                      donor_id: '',
-                    }));
+                    setFormData((prev) => ({ ...prev, donor_id: '' }));
                   }
                 }}
-                className="w-full pr-9 pl-9 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="w-full pr-9 pl-9 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100"
               />
-
               <Search className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2" />
-
               <button
                 type="button"
-                onClick={() =>
-                  setShowDonorDropdown(
-                    !showDonorDropdown
-                  )
-                }
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                disabled={!isActionAllowed || isBusy}
+                onClick={() => setShowDonorDropdown(!showDonorDropdown)}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 disabled:opacity-50"
               >
                 <ChevronDown className="w-4 h-4" />
               </button>
             </div>
 
-            {showDonorDropdown && (
+            {showDonorDropdown && isActionAllowed && (
               <div className="absolute top-full right-0 left-0 mt-1 bg-white border rounded-xl shadow-lg z-30 max-h-56 overflow-y-auto divide-y">
                 <div
                   onClick={() => {
-                    setFormData((prev) => ({
-                      ...prev,
-                      donor_id: '',
-                    }));
-
+                    setFormData((prev) => ({ ...prev, donor_id: '' }));
                     setDonorSearch('');
                     setShowDonorDropdown(false);
                   }}
@@ -517,259 +416,141 @@ export default function DonationFormModal({
                 >
                   -- תרומה אנונימית / ללא שיוך --
                 </div>
-
                 {filteredDonors.length > 0 ? (
                   filteredDonors.map((d) => (
                     <div
                       key={d.id}
-                      onClick={() =>
-                        handleSelectDonor(d)
-                      }
+                      onClick={() => handleSelectDonor(d)}
                       className="p-2.5 hover:bg-blue-50/50 cursor-pointer text-xs flex justify-between items-center transition"
                     >
                       <div>
                         <span className="font-bold text-slate-800">
-                          {d.first_name_he}{' '}
-                          {d.last_name_he}
+                          {d.first_name_he} {d.last_name_he}
                         </span>
-
-                        {d.city && (
-                          <span className="text-slate-400 mr-2">
-                            ({d.city})
-                          </span>
-                        )}
+                        {d.city && <span className="text-slate-400 mr-2">({d.city})</span>}
                       </div>
-
-                      <span
-                        className="text-slate-400 font-mono"
-                        dir="ltr"
-                      >
-                        {d.phone_1 || ''}
-                      </span>
+                      <span className="text-slate-400 font-mono" dir="ltr">{d.phone_1 || ''}</span>
                     </div>
                   ))
                 ) : (
-                  <div className="p-3 text-xs text-slate-400 text-center">
-                    לא נמצאו תורמים תואמים
-                  </div>
+                  <div className="p-3 text-xs text-slate-400 text-center">לא נמצאו תורמים תואמים</div>
                 )}
               </div>
             )}
           </div>
 
-          {/* סכום ומטבע */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                סכום התרומה
-              </label>
-
+              <label className="block text-xs font-medium text-slate-700 mb-1">סכום התרומה</label>
               <input
                 type="number"
                 step="0.01"
                 required
                 min="0.01"
+                disabled={!isActionAllowed || isBusy}
                 value={formData.amount || ''}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    amount:
-                      parseFloat(e.target.value) || 0,
-                  }))
-                }
+                onChange={(e) => setFormData((prev) => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
                 placeholder="0.00"
-                className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-bold text-slate-800"
+                className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-bold text-slate-800 disabled:bg-slate-100"
               />
             </div>
-
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">
-                מטבע
-              </label>
-
+              <label className="block text-xs font-medium text-slate-700 mb-1">מטבע</label>
               <select
                 value={formData.currency || 'ILS'}
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    currency: e.target.value,
-                  }))
-                }
-                className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                disabled={!isActionAllowed || isBusy}
+                onChange={(e) => setFormData((prev) => ({ ...prev, currency: e.target.value }))}
+                className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white disabled:bg-slate-100"
               >
-                <option value="ILS">
-                  ₪ - שקל חדש
-                </option>
-                <option value="USD">
-                  $ - דולר ארה"ב
-                </option>
-                <option value="EUR">
-                  € - אירו
-                </option>
+                <option value="ILS">₪ - שקל חדש</option>
+                <option value="USD">$ - דולר ארה"ב</option>
+                <option value="EUR">€ - אירו</option>
               </select>
             </div>
           </div>
 
-          {/* אופן תשלום ותאריך */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
-                <CreditCard className="w-3.5 h-3.5 text-slate-400" />
-                אופן תשלום
+                <CreditCard className="w-3.5 h-3.5 text-slate-400" /> אופן תשלום
               </label>
-
               <select
-                value={
-                  formData.payment_method ||
-                  'credit_card'
-                }
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    payment_method: e.target.value,
-                  }))
-                }
-                className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                value={formData.payment_method || 'credit_card'}
+                disabled={!isActionAllowed || isBusy}
+                onChange={(e) => setFormData((prev) => ({ ...prev, payment_method: e.target.value }))}
+                className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white disabled:bg-slate-100"
               >
-                <option value="credit_card">
-                  כרטיס אשראי
-                </option>
-                <option value="bank_transfer">
-                  העברה בנקאית
-                </option>
-                <option value="bit">
-                  ביט (Bit)
-                </option>
-                <option value="paybox">
-                  פייבוקס (PayBox)
-                </option>
-                <option value="cash">
-                  מזומן
-                </option>
-                <option value="check">
-                  שיק
-                </option>
-                <option value="paypal">
-                  פייפאל
-                </option>
-                <option value="other">
-                  אחר
-                </option>
+                <option value="credit_card">כרטיס אשראי</option>
+                <option value="bank_transfer">העברה בנקאית</option>
+                <option value="bit">ביט (Bit)</option>
+                <option value="paybox">פייבוקס (PayBox)</option>
+                <option value="cash">מזומן</option>
+                <option value="check">שיק</option>
+                <option value="paypal">פייפאל</option>
+                <option value="other">אחר</option>
               </select>
             </div>
-
             <div>
               <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                תאריך תרומה
+                <Calendar className="w-3.5 h-3.5 text-slate-400" /> תאריך תרומה
               </label>
-
               <input
                 type="date"
                 required
-                value={
-                  formData.donation_date || ''
-                }
-                onChange={(e) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    donation_date: e.target.value,
-                  }))
-                }
-                className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                disabled={!isActionAllowed || isBusy}
+                value={formData.donation_date || ''}
+                onChange={(e) => setFormData((prev) => ({ ...prev, donation_date: e.target.value }))}
+                className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white disabled:bg-slate-100"
               />
             </div>
           </div>
 
-          {/* מספר קבלה */}
           <div>
-            <label className="block text-xs font-medium text-slate-700 mb-1">
-              מספר קבלה / אסמכתא
-            </label>
-
+            <label className="block text-xs font-medium text-slate-700 mb-1">מספר קבלה / אסמכתא</label>
             <input
               type="text"
-              value={
-                formData.receipt_number || ''
-              }
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  receipt_number: e.target.value,
-                }))
-              }
+              disabled={!isActionAllowed || isBusy}
+              value={formData.receipt_number || ''}
+              onChange={(e) => setFormData((prev) => ({ ...prev, receipt_number: e.target.value }))}
               placeholder="לדוגמה: 100245"
-              className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100"
             />
           </div>
 
-          {/* העלאת מסמכים */}
           <div className="space-y-2 pt-2 border-t">
             <label className="block text-xs font-medium text-slate-700 flex items-center gap-1">
-              <Paperclip className="w-3.5 h-3.5 text-slate-400" />
-              העלאת מסמכים / קבלות
+              <Paperclip className="w-3.5 h-3.5 text-slate-400" /> העלאת מסמכים / קבלות
             </label>
-
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() =>
-                  fileInputRef.current?.click()
-                }
-                disabled={isBusy}
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!isActionAllowed || isBusy || !hasPermission('documents_upload')}
                 className="flex-1 p-2.5 border border-dashed rounded-xl text-xs text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-2 transition disabled:opacity-50"
               >
-                <Upload className="w-4 h-4 text-blue-600" />
-                בחר קבצים
+                <Upload className="w-4 h-4 text-blue-600" /> בחר קבצים
               </button>
-
               <button
                 type="button"
-                onClick={() =>
-                  cameraInputRef.current?.click()
-                }
-                disabled={isBusy}
+                onClick={() => cameraInputRef.current?.click()}
+                disabled={!isActionAllowed || isBusy || !hasPermission('documents_upload')}
                 className="flex-1 p-2.5 border border-dashed rounded-xl text-xs text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-2 transition disabled:opacity-50"
               >
-                <Camera className="w-4 h-4 text-emerald-600" />
-                צילום ישיר
+                <Camera className="w-4 h-4 text-emerald-600" /> צילום ישיר
               </button>
-
-              <input
-                type="file"
-                ref={fileInputRef}
-                multiple
-                onChange={handleFileSelect}
-                className="hidden"
-              />
-
-              <input
-                type="file"
-                ref={cameraInputRef}
-                accept="image/*"
-                capture="environment"
-                onChange={handleFileSelect}
-                className="hidden"
-              />
+              <input type="file" ref={fileInputRef} multiple onChange={handleFileSelect} className="hidden" />
+              <input type="file" ref={cameraInputRef} accept="image/*" capture="environment" onChange={handleFileSelect} className="hidden" />
             </div>
 
             {filesToUpload.length > 0 && (
               <div className="space-y-1.5 pt-2">
                 {filesToUpload.map((f, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center justify-between p-2 bg-slate-50 border rounded-lg text-xs"
-                  >
-                    <span className="truncate max-w-[200px] font-medium text-slate-700">
-                      {f.name}
-                    </span>
-
+                  <div key={i} className="flex items-center justify-between p-2 bg-slate-50 border rounded-lg text-xs">
+                    <span className="truncate max-w-[200px] font-medium text-slate-700">{f.name}</span>
                     <button
                       type="button"
-                      onClick={() =>
-                        removeFile(i)
-                      }
-                      disabled={isBusy}
+                      onClick={() => removeFile(i)}
+                      disabled={!isActionAllowed || isBusy}
                       className="text-slate-400 hover:text-red-500 p-1 disabled:opacity-50"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -780,28 +561,20 @@ export default function DonationFormModal({
             )}
           </div>
 
-          {/* הערות */}
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1 flex items-center gap-1">
-              <FileText className="w-3.5 h-3.5 text-slate-400" />
-              הערות לתרומה
+              <FileText className="w-3.5 h-3.5 text-slate-400" /> הערות לתרומה
             </label>
-
             <textarea
               rows={2}
+              disabled={!isActionAllowed || isBusy}
               value={formData.notes || ''}
-              onChange={(e) =>
-                setFormData((prev) => ({
-                  ...prev,
-                  notes: e.target.value,
-                }))
-              }
+              onChange={(e) => setFormData((prev) => ({ ...prev, notes: e.target.value }))}
               placeholder="פירוט נוסף, ייעוד התרומה..."
-              className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 disabled:bg-slate-100"
             />
           </div>
 
-          {/* כפתורי פעולה */}
           <div className="flex items-center justify-end gap-3 pt-4 border-t">
             <button
               type="button"
@@ -811,30 +584,26 @@ export default function DonationFormModal({
             >
               ביטול
             </button>
-
-            <button
-              type="submit"
-              disabled={isBusy}
-              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-medium flex items-center gap-2 transition shadow-sm disabled:opacity-50"
-            >
-              {isBusy ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-
-                  {uploadingFiles
-                    ? 'מעלה קבצים...'
-                    : 'שומר...'}
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-
-                  {isEditMode
-                    ? 'שמור שינויים'
-                    : 'רשום תרומה'}
-                </>
-              )}
-            </button>
+            
+            {isActionAllowed && (
+              <button
+                type="submit"
+                disabled={isBusy}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-medium flex items-center gap-2 transition shadow-sm disabled:opacity-50"
+              >
+                {isBusy ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {uploadingFiles ? 'מעלה קבצים...' : 'שומר...'}
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    {isEditMode ? 'שמור שינויים' : 'רשום תרומה'}
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </form>
       </div>
