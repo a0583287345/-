@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { logActivity } from '@/lib/logger';
 
 import {
   Calendar,

@@ -233,29 +233,52 @@ export default function DonorFormModal({
       };
 
       let error = null;
+    const donorFullName = `${formData.first_name_he || ''} ${formData.last_name_he || ''}`.trim() || 'תורם';
 
-      if (donorToEdit?.id) {
-        // ===============================================
-        // עדכון תורם קיים
-        // ===============================================
+    if (donorToEdit?.id) {
+      // ===============================================
+      // עדכון תורם קיים
+      // ===============================================
 
-        const res = await supabase
-          .from('donors')
-          .update(payload)
-          .eq('id', donorToEdit.id);
+      const res = await supabase
+        .from('donors')
+        .update(payload)
+        .eq('id', donorToEdit.id);
 
-        error = res.error;
-      } else {
-        // ===============================================
-        // יצירת תורם חדש
-        // ===============================================
+      error = res.error;
 
-        const res = await supabase
-          .from('donors')
-          .insert([payload]);
-
-        error = res.error;
+      if (!error) {
+        // ===================================================
+        // 📝 רישום ביומן הפעילות (Audit Log) - עדכון
+        // ===================================================
+        await logActivity(
+          'UPDATE',
+          'donors',
+          `ערך תורם קיים בשם ${donorFullName}`
+        );
       }
+    } else {
+      // ===============================================
+      // יצירת תורם חדש
+      // ===============================================
+
+      const res = await supabase
+        .from('donors')
+        .insert([payload]);
+
+      error = res.error;
+
+      if (!error) {
+        // ===================================================
+        // 📝 רישום ביומן הפעילות (Audit Log) - יצירה
+        // ===================================================
+        await logActivity(
+          'INSERT',
+          'donors',
+          `יצר תורם חדש בשם ${donorFullName}`
+        );
+      }
+    }
 
       if (error) {
         console.error(

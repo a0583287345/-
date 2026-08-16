@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Donor } from '@/types/donor';
 import * as XLSX from 'xlsx';
 import { usePermissions } from '@/hooks/usePermissions';
+import { logActivity } from '@/lib/logger';
 import {
   Search,
   UserPlus,

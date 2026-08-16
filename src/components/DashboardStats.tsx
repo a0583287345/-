@@ -12,6 +12,7 @@ export default function DashboardStats({
   totalsByCurrency,
   activeRecurring,
   yissacharZevulunCount,
+  
 }: StatsProps) {
   const currencySymbols: Record<string, string> = {
     ILS: '₪',

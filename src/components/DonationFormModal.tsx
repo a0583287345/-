@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Donor, Donation } from '@/types/donor';
+import { logActivity } from '@/lib/logger';
 import {
   X,
   Save,

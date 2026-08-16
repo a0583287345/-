@@ -1,6 +1,7 @@
 "use client";
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { logActivity } from '@/lib/logger';
 
 // הגדרת סוגי הנתונים
 type Role = {
