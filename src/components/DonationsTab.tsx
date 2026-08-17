@@ -81,6 +81,38 @@ interface DonationsTabProps {
   onViewDonor: (donor: Donor) => void;
 }
 
+/* ============================================================
+   תרגום אמצעי תרומה
+   הערכים במסד הנתונים נשארים באנגלית.
+============================================================ */
+
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  credit_card: 'כרטיס אשראי',
+  bank_transfer_israel: 'העברה בנקאית ישראל',
+  bank_transfer_usa: 'העברה בנקאית ארה״ב',
+  bank_transfer_panama: 'העברה בנקאית פנמה',
+  bank_transfer_france: 'העברה בנקאית צרפת',
+  bit: 'ביט (Bit)',
+  paybox: 'פייבוקס (PayBox)',
+  cash: 'מזומן',
+  check: 'שיק',
+  paypal: 'פייפאל',
+  other: 'אחר',
+};
+
+function getPaymentMethodLabel(
+  paymentMethod: string | null | undefined
+) {
+  if (!paymentMethod) {
+    return '-';
+  }
+
+  return (
+    PAYMENT_METHOD_LABELS[paymentMethod] ||
+    paymentMethod
+  );
+}
+
 function formatDate(
   date: string | null | undefined
 ) {
@@ -366,6 +398,11 @@ export default function DonationsTab({
             donation.payment_method || ''
           ).toLowerCase();
 
+        const paymentLabel =
+          getPaymentMethodLabel(
+            donation.payment_method
+          ).toLowerCase();
+
         const currency =
           (
             donation.currency || 'ILS'
@@ -378,6 +415,7 @@ export default function DonationsTab({
           receipt.includes(query) ||
           notes.includes(query) ||
           payment.includes(query) ||
+          paymentLabel.includes(query) ||
           currency.includes(query) ||
           String(
             donation.amount
@@ -752,7 +790,9 @@ export default function DonationsTab({
             donor?.country || '',
             donation.amount,
             donation.currency || 'ILS',
-            donation.payment_method || '',
+            getPaymentMethodLabel(
+              donation.payment_method
+            ),
             donation.donation_date || '',
             donation.created_at || '',
             donation.receipt_number || '',
@@ -1143,7 +1183,7 @@ export default function DonationsTab({
                   key={method}
                   value={method}
                 >
-                  {method}
+                  {getPaymentMethodLabel(method)}
                 </option>
               )
             )}
@@ -1917,7 +1957,9 @@ export default function DonationsTab({
                             >
                               <CreditCard className="w-3 h-3" />
 
-                              {donation.payment_method}
+                              {getPaymentMethodLabel(
+                                donation.payment_method
+                              )}
                             </span>
                           ) : (
                             <span className="text-slate-400">

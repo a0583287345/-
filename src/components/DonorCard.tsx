@@ -107,26 +107,173 @@ function getCurrencySymbol(
 ) {
   if (!currency) return '₪';
 
-  const value = currency.toUpperCase();
+  const value = currency
+    .toString()
+    .trim()
+    .toUpperCase();
 
   switch (value) {
     case 'ILS':
     case 'NIS':
     case 'ש"ח':
     case 'שח':
+    case '₪':
       return '₪';
 
     case 'USD':
+    case '$':
       return '$';
 
     case 'EUR':
+    case '€':
       return '€';
 
     case 'GBP':
+    case '£':
       return '£';
 
     default:
       return currency;
+  }
+}
+
+/* =========================================================
+   תרגום אופן תשלום לעברית
+========================================================= */
+
+function getPaymentMethodLabel(
+  paymentMethod?: string | null
+) {
+  if (!paymentMethod) {
+    return 'לא צוין';
+  }
+
+  /*
+   * מנקים רווחים ומאחדים אותיות באנגלית
+   * כדי שגם ערכים כמו:
+   * Credit Card
+   * credit_card
+   * CREDIT-CARD
+   * יזוהו.
+   */
+  const normalized = paymentMethod
+    .toString()
+    .trim()
+    .toLowerCase()
+    .replace(/[-\s]+/g, '_');
+
+  switch (normalized) {
+    /* =========================================
+       כרטיס אשראי
+    ========================================= */
+
+    case 'credit_card':
+    case 'creditcard':
+    case 'card':
+    case 'visa':
+    case 'mastercard':
+    case 'credit':
+      return 'כרטיס אשראי';
+
+    /* =========================================
+       העברות בנקאיות
+    ========================================= */
+
+    case 'bank_transfer':
+    case 'banktransfer':
+      return 'העברה בנקאית';
+
+    case 'bank_transfer_israel':
+    case 'bank_transfer_il':
+    case 'bank_transfer_israeli':
+      return 'העברה בנקאית ישראל';
+
+    case 'bank_transfer_usa':
+    case 'bank_transfer_us':
+    case 'bank_transfer_usa_bank':
+      return 'העברה בנקאית ארה״ב';
+
+    case 'bank_transfer_panama':
+      return 'העברה בנקאית פנמה';
+
+    case 'bank_transfer_france':
+      return 'העברה בנקאית צרפת';
+
+    /* =========================================
+       Bit
+    ========================================= */
+
+    case 'bit':
+    case 'bit_payment':
+      return 'ביט (Bit)';
+
+    /* =========================================
+       PayBox
+    ========================================= */
+
+    case 'paybox':
+    case 'pay_box':
+    case 'paybox_payment':
+      return 'פייבוקס (PayBox)';
+
+    /* =========================================
+       מזומן
+    ========================================= */
+
+    case 'cash':
+    case 'cash_payment':
+      return 'מזומן';
+
+    /* =========================================
+       שיק
+    ========================================= */
+
+    case 'check':
+    case 'cheque':
+    case 'check_payment':
+    case 'cheque_payment':
+      return 'שיק';
+
+    /* =========================================
+       PayPal
+    ========================================= */
+
+    case 'paypal':
+    case 'pay_pal':
+      return 'פייפאל';
+
+    /* =========================================
+       הוראת קבע
+    ========================================= */
+
+    case 'standing_order':
+    case 'standingorder':
+    case 'direct_debit':
+    case 'directdebit':
+    case 'recurring':
+      return 'הוראת קבע';
+
+    /* =========================================
+       העברה כללית
+    ========================================= */
+
+    case 'transfer':
+      return 'העברה בנקאית';
+
+    /* =========================================
+       אחר
+    ========================================= */
+
+    case 'other':
+    case 'other_payment':
+      return 'אחר';
+
+    default:
+      /*
+       * אם הערך כבר בעברית - מחזירים אותו.
+       * אחרת מחזירים את הערך המקורי כדי לא להעלים מידע.
+       */
+      return paymentMethod;
   }
 }
 
@@ -1295,6 +1442,11 @@ export default function DonorCard({
                           donation.currency
                         );
 
+                      const paymentMethodLabel =
+                        getPaymentMethodLabel(
+                          donation.payment_method
+                        );
+
                       return (
                         <div
                           key={donation.id}
@@ -1364,14 +1516,22 @@ export default function DonorCard({
                                   </div>
                                 )}
 
+                                {/* ==================================
+                                    אמצעי תשלום בעברית
+                                ================================== */}
+
                                 <div
                                   className="
                                     text-[10px]
-                                    text-slate-400
+                                    text-slate-500
+                                    mt-0.5
+                                    font-medium
                                   "
                                 >
-                                  {donation.payment_method ||
-                                    'אמצעי תשלום לא צוין'}
+                                  אמצעי תשלום:{' '}
+                                  <span className="text-slate-700">
+                                    {paymentMethodLabel}
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -1544,8 +1704,7 @@ export default function DonorCard({
             <div
               className="
                 rounded-xl
-                border
-                border-slate-100
+                border border-slate-100
                 overflow-hidden
               "
             >
@@ -1628,8 +1787,7 @@ export default function DonorCard({
             <div
               className="
                 rounded-xl
-                border
-                border-slate-100
+                border border-slate-100
                 overflow-hidden
               "
             >

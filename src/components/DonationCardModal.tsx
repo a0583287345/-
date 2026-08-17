@@ -11,7 +11,6 @@ import {
   FileText,
   User,
   Hash,
-  FileCheck,
   StickyNote,
   X,
   Trash2,
@@ -113,6 +112,64 @@ export default function DonationCardModal({
       setDocuments([]);
     } finally {
       setLoadingDocuments(false);
+    }
+  }
+
+  /*
+   * =========================================================
+   * תרגום אמצעי תשלום לעברית
+   * =========================================================
+   */
+  function getPaymentMethodLabel(
+    paymentMethod?: string | null
+  ) {
+    if (!paymentMethod) {
+      return '-';
+    }
+
+    switch (paymentMethod) {
+      case 'credit_card':
+        return 'כרטיס אשראי';
+
+      case 'bank_transfer_israel':
+        return 'העברה בנקאית ישראל';
+
+      case 'bank_transfer_usa':
+        return 'העברה בנקאית ארה״ב';
+
+      case 'bank_transfer_panama':
+        return 'העברה בנקאית פנמה';
+
+      case 'bank_transfer_france':
+        return 'העברה בנקאית צרפת';
+
+      case 'bit':
+        return 'ביט (Bit)';
+
+      case 'paybox':
+        return 'פייבוקס (PayBox)';
+
+      case 'cash':
+        return 'מזומן';
+
+      case 'check':
+        return 'שיק';
+
+      case 'paypal':
+        return 'פייפאל';
+
+      case 'other':
+        return 'אחר';
+
+      /*
+       * תאימות לתרומות ישנות
+       * שכבר נשמרו עם הערך bank_transfer
+       */
+      case 'bank_transfer':
+        return 'העברה בנקאית';
+
+      default:
+        return paymentMethod;
     }
   }
 
@@ -362,7 +419,7 @@ export default function DonationCardModal({
               </div>
 
               <div className="font-bold text-sm text-slate-800">
-                {donation.payment_method || '-'}
+                {getPaymentMethodLabel(donation.payment_method)}
               </div>
             </div>
 
