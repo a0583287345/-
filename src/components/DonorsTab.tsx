@@ -4,7 +4,6 @@ import { useMemo, useState } from 'react';
 import { Donor } from '@/types/donor';
 import * as XLSX from 'xlsx';
 import { usePermissions } from '@/hooks/usePermissions';
-import { logActivity } from '@/lib/logger';
 import {
   Search,
   UserPlus,
@@ -21,6 +20,7 @@ import {
 interface DonorsTabProps {
   donors: Donor[];
   loading: boolean;
+
   activeRecurring: number;
   yissacharZevulunCount: number;
 
@@ -40,16 +40,24 @@ type NavigationOption =
 export default function DonorsTab({
   donors,
   loading,
-  activeRecurring,
-  yissacharZevulunCount,
+  activeRecurring: _activeRecurring,
+  yissacharZevulunCount: _yissacharZevulunCount,
   onCreateDonor,
   onViewDonor,
   onAddDonation,
 }: DonorsTabProps) {
   /* ============================================================
-     חיפוש כללי
+     הרשאות
   ============================================================ */
 
+  const {
+    hasPermission,
+    loadingPerms,
+  } = usePermissions();
+
+  /* ============================================================
+     חיפוש כללי
+  ============================================================ */
 
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -226,16 +234,12 @@ export default function DonorsTab({
         return false;
       }
 
-      /* מדינה */
-
       if (
         countryFilter &&
         donor.country !== countryFilter
       ) {
         return false;
       }
-
-      /* עיר */
 
       if (
         cityFilter &&
@@ -244,8 +248,6 @@ export default function DonorsTab({
         return false;
       }
 
-      /* רחוב */
-
       if (
         streetFilter &&
         donor.street !== streetFilter
@@ -253,16 +255,12 @@ export default function DonorsTab({
         return false;
       }
 
-      /* איש קשר */
-
       if (
         contactFilter &&
         donor.connected_contact !== contactFilter
       ) {
         return false;
       }
-
-      /* אימייל */
 
       if (
         emailFilter &&
@@ -273,20 +271,14 @@ export default function DonorsTab({
         return false;
       }
 
-      /* טלפון */
-
       if (
         phoneFilter &&
-        !(
-          `${donor.phone_1 || ''} ${donor.phone_2 || ''}`
-        )
+        `${donor.phone_1 || ''} ${donor.phone_2 || ''}`
           .toLowerCase()
-          .includes(phoneFilter.toLowerCase())
+          .includes(phoneFilter.toLowerCase()) === false
       ) {
         return false;
       }
-
-      /* הערות */
 
       if (
         notesFilter &&
@@ -296,8 +288,6 @@ export default function DonorsTab({
       ) {
         return false;
       }
-
-      /* הוראת קבע */
 
       if (
         recurringFilter === 'yes' &&
@@ -312,8 +302,6 @@ export default function DonorsTab({
       ) {
         return false;
       }
-
-      /* יששכר וזבולון */
 
       if (
         yissacharFilter === 'yes' &&
@@ -344,6 +332,23 @@ export default function DonorsTab({
     phoneFilter,
     notesFilter,
   ]);
+
+  /* ============================================================
+     סטטיסטיקה לפי הסינון הנוכחי
+  ============================================================ */
+
+  const filteredRecurringCount = useMemo(() => {
+    return filteredDonors.filter(
+      (donor) => donor.is_recurring
+    ).length;
+  }, [filteredDonors]);
+
+  const filteredYissacharZevulunCount =
+    useMemo(() => {
+      return filteredDonors.filter(
+        (donor) => donor.has_yissachar_zevulun
+      ).length;
+    }, [filteredDonors]);
 
   /* ============================================================
      כתובת מלאה
@@ -404,65 +409,92 @@ export default function DonorsTab({
 
   /* ============================================================
      ייצוא לאקסל
-     מייצא בדיוק את הרשימה לאחר הסינון
+     הרשאה: donors_export
   ============================================================ */
 
   const exportToExcel = () => {
-    const excelData = filteredDonors.map((donor) => ({
-      'שם פרטי': donor.first_name_he || '',
-      'שם משפחה': donor.last_name_he || '',
+    /*
+     * בדיקת הרשאה גם בתוך הפונקציה עצמה.
+     * כך שגם אם מישהו יפעיל את הפונקציה בדרך אחרת,
+     * לא יתבצע הייצוא ללא הרשאה.
+     */
+    if (!hasPermission('donors_export')) {
+      return;
+    }
 
-      'שם באנגלית':
-        `${donor.first_name_en || ''} ${
-          donor.last_name_en || ''
-        }`.trim(),
+    if (filteredDonors.length === 0) {
+      return;
+    }
 
-      'טלפון 1': donor.phone_1 || '',
-      'טלפון 2': donor.phone_2 || '',
-      'אימייל': donor.email || '',
+    const excelData =
+      filteredDonors.map((donor) => ({
+        'שם פרטי':
+          donor.first_name_he || '',
 
-      'מדינה': donor.country || '',
-      'עיר': donor.city || '',
-      'רחוב': donor.street || '',
-      'מספר בית': donor.house_number || '',
+        'שם משפחה':
+          donor.last_name_he || '',
 
-      'הוראת קבע':
-        donor.is_recurring
-          ? 'כן'
-          : 'לא',
+        'שם באנגלית':
+          `${donor.first_name_en || ''} ${
+            donor.last_name_en || ''
+          }`.trim(),
 
-      'יששכר וזבולון':
-        donor.has_yissachar_zevulun
-          ? 'כן'
-          : 'לא',
+        'טלפון 1':
+          donor.phone_1 || '',
 
-      'שם יששכר וזבולון':
-        donor.yissachar_zevulun_name || '',
+        'טלפון 2':
+          donor.phone_2 || '',
 
-      'איש קשר':
-        donor.connected_contact || '',
+        'אימייל':
+          donor.email || '',
 
-      'תאריך לידה':
-        donor.birthday || '',
+        'מדינה':
+          donor.country || '',
 
-      'יארצייט':
-        donor.yahrzeit_date || '',
+        'עיר':
+          donor.city || '',
 
-      'הערות':
-        donor.notes || '',
+        'רחוב':
+          donor.street || '',
 
-      'תאריך יצירה':
-        donor.created_at
-          ? new Date(
-              donor.created_at
-            ).toLocaleDateString('he-IL')
-          : '',
-    }));
+        'מספר בית':
+          donor.house_number || '',
+
+        'הוראת קבע':
+          donor.is_recurring
+            ? 'כן'
+            : 'לא',
+
+        'יששכר וזבולון':
+          donor.has_yissachar_zevulun
+            ? 'כן'
+            : 'לא',
+
+        'שם יששכר וזבולון':
+          donor.yissachar_zevulun_name || '',
+
+        'איש קשר':
+          donor.connected_contact || '',
+
+        'תאריך לידה':
+          donor.birthday || '',
+
+        'יארצייט':
+          donor.yahrzeit_date || '',
+
+        'הערות':
+          donor.notes || '',
+
+        'תאריך יצירה':
+          donor.created_at
+            ? new Date(
+                donor.created_at
+              ).toLocaleDateString('he-IL')
+            : '',
+      }));
 
     const worksheet =
-      XLSX.utils.json_to_sheet(
-        excelData
-      );
+      XLSX.utils.json_to_sheet(excelData);
 
     worksheet['!cols'] = [
       { wch: 14 },
@@ -506,25 +538,35 @@ export default function DonorsTab({
   };
 
   /* ============================================================
+     בדיקת טעינת הרשאות
+  ============================================================ */
+
+  if (loadingPerms) {
+    return (
+      <div className="p-8 text-center">
+        טוען הרשאות...
+      </div>
+    );
+  }
+
+  if (!hasPermission('donors_view')) {
+    return (
+      <div className="p-8 text-center text-red-600 font-bold">
+        אין גישה למסך תורמים.
+      </div>
+    );
+  }
+
+  /* ============================================================
      RENDER
   ============================================================ */
-// ---> 2. החסימה מתחילה כאן
-  const { hasPermission, loadingPerms } = usePermissions();
 
-  if (loadingPerms) return <div className="p-8 text-center">טוען הרשאות...</div>;
-  if (!hasPermission('donors_view')) {
-    return <div className="p-8 text-center text-red-600 font-bold">אין גישה למסך תורמים.</div>;
-  }
-  // <--- סוף החסימה
   return (
     <div
       className="p-4 md:p-5 space-y-5"
       dir="rtl"
     >
-
-      {/* ======================================================
-          כותרת
-      ====================================================== */}
+      {/* כותרת */}
 
       <div
         className="
@@ -548,31 +590,32 @@ export default function DonorsTab({
         </div>
 
         <div className="flex items-center gap-2">
-
-          <button
-            onClick={exportToExcel}
-            disabled={filteredDonors.length === 0}
-            className="
-              flex
-              items-center
-              gap-2
-              px-3.5
-              py-2.5
-              rounded-xl
-              text-xs
-              font-medium
-              bg-emerald-600
-              hover:bg-emerald-700
-              disabled:bg-slate-300
-              disabled:cursor-not-allowed
-              text-white
-              transition
-              shadow-sm
-            "
-          >
-            <Download className="w-4 h-4" />
-            ייצוא לאקסל
-          </button>
+          {hasPermission('donors_export') && (
+            <button
+              onClick={exportToExcel}
+              disabled={filteredDonors.length === 0}
+              className="
+                flex
+                items-center
+                gap-2
+                px-3.5
+                py-2.5
+                rounded-xl
+                text-xs
+                font-medium
+                bg-emerald-600
+                hover:bg-emerald-700
+                disabled:bg-slate-300
+                disabled:cursor-not-allowed
+                text-white
+                transition
+                shadow-sm
+              "
+            >
+              <Download className="w-4 h-4" />
+              ייצוא לאקסל
+            </button>
+          )}
 
           <button
             onClick={onCreateDonor}
@@ -595,13 +638,10 @@ export default function DonorsTab({
             <UserPlus className="w-4 h-4" />
             הוספת תורם חדש
           </button>
-
         </div>
       </div>
 
-      {/* ======================================================
-          חיפוש וסינון ראשי
-      ====================================================== */}
+      {/* חיפוש וסינון */}
 
       <div
         className="
@@ -613,13 +653,8 @@ export default function DonorsTab({
           space-y-3
         "
       >
-
-        {/* חיפוש */}
-
         <div className="flex flex-col xl:flex-row gap-2.5">
-
           <div className="relative flex-1">
-
             <Search
               className="
                 w-4
@@ -655,7 +690,6 @@ export default function DonorsTab({
                 focus:border-blue-500
               "
             />
-
           </div>
 
           <button
@@ -700,12 +734,7 @@ export default function DonorsTab({
           >
             <RotateCcw className="w-4 h-4" />
           </button>
-
         </div>
-
-        {/* ====================================================
-            פילטרים נגישים ישירות
-        ==================================================== */}
 
         <div
           className="
@@ -717,9 +746,6 @@ export default function DonorsTab({
             gap-2
           "
         >
-
-          {/* מדינה */}
-
           <select
             value={countryFilter}
             onChange={(e) =>
@@ -740,9 +766,7 @@ export default function DonorsTab({
               focus:ring-blue-500/20
             "
           >
-            <option value="">
-              כל המדינות
-            </option>
+            <option value="">כל המדינות</option>
 
             {countries.map((country) => (
               <option
@@ -753,8 +777,6 @@ export default function DonorsTab({
               </option>
             ))}
           </select>
-
-          {/* עיר */}
 
           <select
             value={cityFilter}
@@ -776,9 +798,7 @@ export default function DonorsTab({
               focus:ring-blue-500/20
             "
           >
-            <option value="">
-              כל הערים
-            </option>
+            <option value="">כל הערים</option>
 
             {cities.map((city) => (
               <option
@@ -789,8 +809,6 @@ export default function DonorsTab({
               </option>
             ))}
           </select>
-
-          {/* הוראת קבע */}
 
           <select
             value={recurringFilter}
@@ -812,20 +830,10 @@ export default function DonorsTab({
               focus:ring-blue-500/20
             "
           >
-            <option value="">
-              כל התורמים
-            </option>
-
-            <option value="yes">
-              עם הוראת קבע
-            </option>
-
-            <option value="no">
-              ללא הוראת קבע
-            </option>
+            <option value="">כל התורמים</option>
+            <option value="yes">עם הוראת קבע</option>
+            <option value="no">ללא הוראת קבע</option>
           </select>
-
-          {/* יששכר וזבולון */}
 
           <select
             value={yissacharFilter}
@@ -847,24 +855,11 @@ export default function DonorsTab({
               focus:ring-blue-500/20
             "
           >
-            <option value="">
-              כל התורמים
-            </option>
-
-            <option value="yes">
-              יששכר וזבולון
-            </option>
-
-            <option value="no">
-              ללא יששכר וזבולון
-            </option>
+            <option value="">כל התורמים</option>
+            <option value="yes">יששכר וזבולון</option>
+            <option value="no">ללא יששכר וזבולון</option>
           </select>
-
         </div>
-
-        {/* ====================================================
-            סינון מתקדם
-        ==================================================== */}
 
         {showFilters && (
           <div
@@ -879,9 +874,6 @@ export default function DonorsTab({
               border-slate-200
             "
           >
-
-            {/* רחוב */}
-
             <div>
               <label className="block text-[11px] text-slate-500 mb-1">
                 רחוב
@@ -903,9 +895,7 @@ export default function DonorsTab({
                   text-xs
                 "
               >
-                <option value="">
-                  כל הרחובות
-                </option>
+                <option value="">כל הרחובות</option>
 
                 {streets.map((street) => (
                   <option
@@ -917,8 +907,6 @@ export default function DonorsTab({
                 ))}
               </select>
             </div>
-
-            {/* איש קשר */}
 
             <div>
               <label className="block text-[11px] text-slate-500 mb-1">
@@ -941,9 +929,7 @@ export default function DonorsTab({
                   text-xs
                 "
               >
-                <option value="">
-                  כל אנשי הקשר
-                </option>
+                <option value="">כל אנשי הקשר</option>
 
                 {contacts.map((contact) => (
                   <option
@@ -955,8 +941,6 @@ export default function DonorsTab({
                 ))}
               </select>
             </div>
-
-            {/* טלפון */}
 
             <div>
               <label className="block text-[11px] text-slate-500 mb-1">
@@ -983,8 +967,6 @@ export default function DonorsTab({
               />
             </div>
 
-            {/* אימייל */}
-
             <div>
               <label className="block text-[11px] text-slate-500 mb-1">
                 אימייל
@@ -1010,10 +992,7 @@ export default function DonorsTab({
               />
             </div>
 
-            {/* הערות */}
-
             <div className="sm:col-span-2 lg:col-span-2">
-
               <label className="block text-[11px] text-slate-500 mb-1">
                 הערות
               </label>
@@ -1035,18 +1014,13 @@ export default function DonorsTab({
                   text-xs
                 "
               />
-
             </div>
-
           </div>
         )}
 
-        {/* ====================================================
-            סטטיסטיקה
-        ==================================================== */}
+        {/* סטטיסטיקה */}
 
         <div className="flex items-center gap-2 flex-wrap">
-
           <span
             className="
               px-3
@@ -1075,7 +1049,7 @@ export default function DonorsTab({
               text-xs
             "
           >
-            הו"ק: {activeRecurring}
+            הו"ק: {filteredRecurringCount}
           </span>
 
           <span
@@ -1090,25 +1064,19 @@ export default function DonorsTab({
               text-xs
             "
           >
-            יששכר וזבולון: {yissacharZevulunCount}
+            יששכר וזבולון:{' '}
+            {filteredYissacharZevulunCount}
           </span>
-
         </div>
-
       </div>
 
-      {/* ======================================================
-          טבלה
-      ====================================================== */}
+      {/* טבלה */}
 
       {loading ? (
-
         <div className="text-center py-20 text-slate-500">
           טוען נתונים...
         </div>
-
       ) : filteredDonors.length === 0 ? (
-
         <div
           className="
             bg-white
@@ -1122,9 +1090,7 @@ export default function DonorsTab({
         >
           לא נמצאו תורמים התואמים את הסינון.
         </div>
-
       ) : (
-
         <div
           className="
             bg-white
@@ -1135,9 +1101,7 @@ export default function DonorsTab({
             overflow-hidden
           "
         >
-
           <div className="overflow-x-auto">
-
             <table
               className="
                 w-full
@@ -1145,7 +1109,6 @@ export default function DonorsTab({
                 text-[11px]
               "
             >
-
               <thead
                 className="
                   bg-slate-50
@@ -1158,7 +1121,6 @@ export default function DonorsTab({
                 "
               >
                 <tr>
-
                   <th className="px-2.5 py-3 font-medium whitespace-nowrap">
                     שם התורם
                   </th>
@@ -1194,14 +1156,11 @@ export default function DonorsTab({
                   <th className="px-2.5 py-3 font-medium whitespace-nowrap">
                     פעולות
                   </th>
-
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-
                 {filteredDonors.map((donor) => {
-
                   const fullName =
                     `${donor.first_name_he || ''} ${
                       donor.last_name_he || ''
@@ -1218,30 +1177,16 @@ export default function DonorsTab({
                   return (
                     <tr
                       key={donor.id}
-                      className="
-                        hover:bg-slate-50
-                        transition
-                      "
+                      className="hover:bg-slate-50 transition"
                     >
-
-                      {/* ==================================================
-                          שם
-                      ================================================== */}
-
                       <td className="px-2.5 py-3 min-w-[145px]">
-
                         <button
                           type="button"
                           onClick={() =>
                             onViewDonor(donor)
                           }
-                          className="
-                            text-right
-                            group
-                            max-w-full
-                          "
+                          className="text-right group max-w-full"
                         >
-
                           <div
                             className="
                               font-bold
@@ -1271,19 +1216,11 @@ export default function DonorsTab({
                               {englishName}
                             </div>
                           )}
-
                         </button>
-
                       </td>
 
-                      {/* ==================================================
-                          טלפונים
-                      ================================================== */}
-
                       <td className="px-2.5 py-3 min-w-[115px]">
-
                         <div className="flex flex-col gap-1">
-
                           {donor.phone_1 && (
                             <a
                               href={`tel:${donor.phone_1}`}
@@ -1334,17 +1271,10 @@ export default function DonorsTab({
                                 -
                               </span>
                             )}
-
                         </div>
-
                       </td>
 
-                      {/* ==================================================
-                          אימייל
-                      ================================================== */}
-
                       <td className="px-2.5 py-3 min-w-[155px]">
-
                         {donor.email ? (
                           <a
                             href={`mailto:${donor.email}`}
@@ -1373,17 +1303,10 @@ export default function DonorsTab({
                             -
                           </span>
                         )}
-
                       </td>
 
-                      {/* ==================================================
-                          כתובת + ניווט
-                      ================================================== */}
-
                       <td className="px-2.5 py-3 min-w-[175px]">
-
                         {fullAddress ? (
-
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1402,7 +1325,6 @@ export default function DonorsTab({
                             "
                             title="לחץ לבחירת אפליקציית ניווט"
                           >
-
                             <MapPin
                               className="
                                 w-3.5
@@ -1424,26 +1346,17 @@ export default function DonorsTab({
                             >
                               {fullAddress}
                             </span>
-
                           </button>
-
                         ) : (
                           <span className="text-slate-400">
                             -
                           </span>
                         )}
-
                       </td>
 
-                      {/* ==================================================
-                          איש קשר
-                      ================================================== */}
-
                       <td className="px-2.5 py-3 min-w-[125px]">
-
                         {donor.connected_contact ? (
                           <div className="flex items-center gap-1">
-
                             <User className="w-3 h-3 text-slate-400 shrink-0" />
 
                             <span
@@ -1458,22 +1371,15 @@ export default function DonorsTab({
                             >
                               {donor.connected_contact}
                             </span>
-
                           </div>
                         ) : (
                           <span className="text-slate-400">
                             -
                           </span>
                         )}
-
                       </td>
 
-                      {/* ==================================================
-                          הוראת קבע
-                      ================================================== */}
-
                       <td className="px-2.5 py-3">
-
                         {donor.is_recurring ? (
                           <span
                             className="
@@ -1495,19 +1401,11 @@ export default function DonorsTab({
                             -
                           </span>
                         )}
-
                       </td>
 
-                      {/* ==================================================
-                          יששכר וזבולון
-                      ================================================== */}
-
                       <td className="px-2.5 py-3 min-w-[120px]">
-
                         {donor.has_yissachar_zevulun ? (
-
                           <div>
-
                             <span
                               className="
                                 bg-amber-50
@@ -1537,26 +1435,20 @@ export default function DonorsTab({
                                   donor.yissachar_zevulun_name
                                 }
                               >
-                                {donor.yissachar_zevulun_name}
+                                {
+                                  donor.yissachar_zevulun_name
+                                }
                               </div>
                             )}
-
                           </div>
-
                         ) : (
                           <span className="text-slate-400">
                             -
                           </span>
                         )}
-
                       </td>
 
-                      {/* ==================================================
-                          הערות
-                      ================================================== */}
-
                       <td className="px-2.5 py-3 min-w-[150px] max-w-[220px]">
-
                         {donor.notes ? (
                           <div
                             className="
@@ -1574,15 +1466,9 @@ export default function DonorsTab({
                             -
                           </span>
                         )}
-
                       </td>
 
-                      {/* ==================================================
-                          פעולות
-                      ================================================== */}
-
                       <td className="px-2.5 py-3 whitespace-nowrap">
-
                         <button
                           type="button"
                           onClick={(e) =>
@@ -1607,22 +1493,13 @@ export default function DonorsTab({
                         >
                           + תרומה
                         </button>
-
                       </td>
-
                     </tr>
                   );
                 })}
-
               </tbody>
-
             </table>
-
           </div>
-
-          {/* ==================================================
-              תחתית הטבלה
-          ================================================== */}
 
           <div
             className="
@@ -1647,18 +1524,21 @@ export default function DonorsTab({
               {donors.length} תורמים
             </span>
 
-            <span>
-              ייצוא לאקסל יכלול רק את התורמים
-              המוצגים לאחר הסינון
-            </span>
+            {hasPermission('donors_export') ? (
+              <span>
+                ייצוא לאקסל יכלול רק את התורמים
+                המוצגים לאחר הסינון
+              </span>
+            ) : (
+              <span>
+                אין הרשאה לייצוא נתוני תורמים
+              </span>
+            )}
           </div>
-
         </div>
       )}
 
-      {/* ======================================================
-          חלון בחירת אפליקציית ניווט
-      ====================================================== */}
+      {/* חלון בחירת אפליקציית ניווט */}
 
       {navigationAddress && (
         <div
@@ -1676,7 +1556,6 @@ export default function DonorsTab({
             setNavigationAddress(null)
           }
         >
-
           <div
             className="
               bg-white
@@ -1690,9 +1569,6 @@ export default function DonorsTab({
               e.stopPropagation()
             }
           >
-
-            {/* כותרת */}
-
             <div
               className="
                 flex
@@ -1704,9 +1580,7 @@ export default function DonorsTab({
                 border-slate-100
               "
             >
-
               <div className="flex items-center gap-2">
-
                 <div
                   className="
                     w-9
@@ -1723,7 +1597,6 @@ export default function DonorsTab({
                 </div>
 
                 <div>
-
                   <h3 className="font-bold text-slate-800 text-sm">
                     בחירת אפליקציית ניווט
                   </h3>
@@ -1731,9 +1604,7 @@ export default function DonorsTab({
                   <p className="text-[10px] text-slate-400 mt-0.5">
                     לאן תרצה לנווט?
                   </p>
-
                 </div>
-
               </div>
 
               <button
@@ -1755,10 +1626,7 @@ export default function DonorsTab({
               >
                 <X className="w-4 h-4" />
               </button>
-
             </div>
-
-            {/* כתובת */}
 
             <div
               className="
@@ -1774,7 +1642,6 @@ export default function DonorsTab({
               "
             >
               <div className="flex items-start gap-2">
-
                 <MapPin
                   className="
                     w-4
@@ -1788,14 +1655,10 @@ export default function DonorsTab({
                 <span>
                   {navigationAddress}
                 </span>
-
               </div>
             </div>
 
-            {/* אפליקציות */}
-
             <div className="p-5 space-y-2">
-
               <button
                 type="button"
                 onClick={() =>
@@ -1818,9 +1681,7 @@ export default function DonorsTab({
                   text-right
                 "
               >
-
                 <div className="flex items-center gap-3">
-
                   <div
                     className="
                       w-9
@@ -1841,11 +1702,9 @@ export default function DonorsTab({
                   <span className="text-sm font-medium text-slate-700">
                     Waze
                   </span>
-
                 </div>
 
                 <Navigation className="w-4 h-4 text-slate-400" />
-
               </button>
 
               <button
@@ -1870,9 +1729,7 @@ export default function DonorsTab({
                   text-right
                 "
               >
-
                 <div className="flex items-center gap-3">
-
                   <div
                     className="
                       w-9
@@ -1893,11 +1750,9 @@ export default function DonorsTab({
                   <span className="text-sm font-medium text-slate-700">
                     Google Maps
                   </span>
-
                 </div>
 
                 <Navigation className="w-4 h-4 text-slate-400" />
-
               </button>
 
               <button
@@ -1922,9 +1777,7 @@ export default function DonorsTab({
                   text-right
                 "
               >
-
                 <div className="flex items-center gap-3">
-
                   <div
                     className="
                       w-9
@@ -1945,13 +1798,10 @@ export default function DonorsTab({
                   <span className="text-sm font-medium text-slate-700">
                     Apple Maps
                   </span>
-
                 </div>
 
                 <Navigation className="w-4 h-4 text-slate-400" />
-
               </button>
-
             </div>
 
             <div
@@ -1965,12 +1815,9 @@ export default function DonorsTab({
             >
               האפליקציה תיפתח בחלון חדש
             </div>
-
           </div>
-
         </div>
       )}
-
     </div>
   );
 }

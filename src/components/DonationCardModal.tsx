@@ -183,7 +183,7 @@ export default function DonationCardModal({
       await logActivity(
         'DELETE',
         'donations',
-        `מחק תרומה ע"ס ${currencySymbol}${formattedAmount} של התורם ${donorName} (מזהה: ${donation.id})`
+        `מחק תרומה ע"ס ${currencySymbol}${formattedAmount} של התורם ${donorName}`
       );
 
       onDeleted?.();

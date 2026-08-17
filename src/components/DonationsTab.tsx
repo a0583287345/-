@@ -517,11 +517,6 @@ export default function DonationsTab({
 
     result.sort((a, b) => {
       switch (donationSort) {
-        /*
-         * המיון החשוב:
-         * לפי created_at ולא donation_date.
-         */
-
         case 'created_asc':
           return (
             new Date(
@@ -645,6 +640,24 @@ export default function DonationsTab({
     );
 
     return totals;
+  }, [filteredDonations]);
+
+  /* ============================================================
+     מספר תורמים ייחודיים בסינון הנוכחי
+  ============================================================ */
+
+  const filteredDonationDonorCount = useMemo(() => {
+    const donorIds = new Set<string>();
+
+    filteredDonations.forEach(
+      (donation) => {
+        if (donation.donor_id) {
+          donorIds.add(donation.donor_id);
+        }
+      }
+    );
+
+    return donorIds.size;
   }, [filteredDonations]);
 
   /* ============================================================
@@ -855,31 +868,33 @@ export default function DonationsTab({
 
         <div className="flex flex-wrap gap-2">
 
-          <button
-            onClick={exportFilteredDonations}
-            className="
-              bg-blue-600
-              hover:bg-blue-700
-              text-white
-              font-medium
-              px-4
-              py-2.5
-              rounded-xl
-              text-xs
-              flex
-              items-center
-              gap-2
-              transition
-              shadow-sm
-            "
-          >
-            <Download className="w-4 h-4" />
+          {hasPermission('donations_export') && (
+            <button
+              onClick={exportFilteredDonations}
+              className="
+                bg-blue-600
+                hover:bg-blue-700
+                text-white
+                font-medium
+                px-4
+                py-2.5
+                rounded-xl
+                text-xs
+                flex
+                items-center
+                gap-2
+                transition
+                shadow-sm
+              "
+            >
+              <Download className="w-4 h-4" />
 
-            ייצוא לאקסל
+              ייצוא לאקסל
 
-            {filteredDonations.length > 0 &&
-              ` (${filteredDonations.length})`}
-          </button>
+              {filteredDonations.length > 0 &&
+                ` (${filteredDonations.length})`}
+            </button>
+          )}
 
           <button
             onClick={() =>
@@ -1560,6 +1575,8 @@ export default function DonationsTab({
           gap-3
         "
       >
+        {/* מספר תרומות */}
+
         <div
           className="
             bg-white
@@ -1582,10 +1599,36 @@ export default function DonationsTab({
           </div>
         </div>
 
+        {/* מספר תורמים */}
+
+        <div
+          className="
+            bg-white
+            border
+            border-slate-200
+            rounded-2xl
+            p-4
+          "
+        >
+          <div className="text-xs text-slate-400">
+            מספר תורמים
+          </div>
+
+          <div className="text-2xl font-bold text-blue-600 mt-1">
+            {filteredDonationDonorCount}
+          </div>
+
+          <div className="text-[10px] text-slate-400 mt-1">
+            תורמים ייחודיים לפי הסינון הנוכחי
+          </div>
+        </div>
+
+        {/* סה"כ */}
+
         {Object.entries(
           filteredDonationTotals
         )
-          .slice(0, 2)
+          .slice(0, 1)
           .map(
             ([currency, total]) => (
               <div
@@ -1596,6 +1639,46 @@ export default function DonationsTab({
                   border-slate-200
                   rounded-2xl
                   p-4
+                "
+              >
+                <div className="text-xs text-slate-400">
+                  סה"כ {currency}
+                </div>
+
+                <div className="text-2xl font-bold text-emerald-600 mt-1">
+                  {total.toLocaleString(
+                    'he-IL',
+                    {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    }
+                  )}
+                </div>
+
+                <div className="text-[10px] text-slate-400 mt-1">
+                  לפי הסינון הנוכחי
+                </div>
+              </div>
+            )
+          )}
+
+        {/* מטבע נוסף - נשמרת התמיכה הקיימת */}
+
+        {Object.entries(
+          filteredDonationTotals
+        )
+          .slice(1, 2)
+          .map(
+            ([currency, total]) => (
+              <div
+                key={currency}
+                className="
+                  bg-white
+                  border
+                  border-slate-200
+                  rounded-2xl
+                  p-4
+                  md:col-span-3
                 "
               >
                 <div className="text-xs text-slate-400">
