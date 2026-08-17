@@ -70,6 +70,15 @@ export interface DonorCardProps {
     e?: React.MouseEvent
   ) => void;
 
+  /*
+   * פתיחת כרטיס תרומה לפי ID
+   * תואם ל-page.tsx
+   */
+  onOpenDonationById?: (
+    donationId: string,
+    e?: React.MouseEvent
+  ) => void | Promise<void>;
+
   userRole?: 'admin' | 'manager' | 'viewer';
 }
 
@@ -221,6 +230,7 @@ export default function DonorCard({
   donor,
   onAddDonation,
   onViewDonation,
+  onOpenDonationById,
 }: DonorCardProps) {
   /*
    * חשוב:
@@ -572,11 +582,27 @@ export default function DonorCard({
   ) {
     e.stopPropagation();
 
-    if (!onViewDonation) {
+    /*
+     * אם page.tsx מספק onOpenDonationById,
+     * משתמשים בו — זה הממשק החדש.
+     */
+    if (onOpenDonationById) {
+      void onOpenDonationById(
+        donation.id,
+        e
+      );
+
       return;
     }
 
-    onViewDonation(donation, e);
+    /*
+     * תאימות לאחור:
+     * אם קיים רק onViewDonation,
+     * ממשיכים להשתמש בו.
+     */
+    if (onViewDonation) {
+      onViewDonation(donation, e);
+    }
   }
 
   /* =======================================================
@@ -1371,11 +1397,11 @@ export default function DonorCard({
                               </div>
 
                               {/* ==================================
-                                  הכפתור החדש
-                                  לכל תרומה בנפרד
+                                  הכפתור לכל תרומה בנפרד
                               ================================== */}
 
-                              {onViewDonation && (
+                              {(onOpenDonationById ||
+                                onViewDonation) && (
                                 <button
                                   type="button"
                                   onClick={(e) =>
