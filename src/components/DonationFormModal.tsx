@@ -267,7 +267,7 @@ export default function DonationFormModal({
         await logActivity(
           'update',
           'donations',
-          `עודכנה תרומה על סך ${payload.amount} ${payload.currency} עבור: ${donorNameForLog}`
+          `נערכה תרומה על סך ${payload.amount} ${payload.currency} עבור: ${donorNameForLog}`
         );
 
       } else {
@@ -481,7 +481,10 @@ export default function DonationFormModal({
                 className="w-full p-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white disabled:bg-slate-100"
               >
                 <option value="credit_card">כרטיס אשראי</option>
-                <option value="bank_transfer">העברה בנקאית</option>
+                <option value="bank_transfer">העברה בנקאית ישראל</option>
+                <option value="bank_transfer">העברה בנקאית ארה"ב</option>
+                <option value="bank_transfer">העברה בנקאית פנמה</option>
+                <option value="bank_transfer">העברה בנקאית צרפת</option>
                 <option value="bit">ביט (Bit)</option>
                 <option value="paybox">פייבוקס (PayBox)</option>
                 <option value="cash">מזומן</option>

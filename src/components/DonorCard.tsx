@@ -6,7 +6,6 @@ import { Donor } from '@/types/donor';
 import { supabase } from '@/lib/supabase';
 import { Donation, Attachment } from '@/types/donor';
 import { usePermissions } from '@/hooks/usePermissions';
-import { logActivity } from '@/lib/logger';
 
 import {
   Phone,
@@ -30,7 +29,11 @@ import {
   Loader2,
 } from 'lucide-react';
 
-interface DonationRecord {
+/* =========================================================
+   סוג תרומה מקומי
+========================================================= */
+
+export interface DonationRecord {
   id: string;
   donor_id?: string | null;
   amount: number;
@@ -43,6 +46,10 @@ interface DonationRecord {
   created_at?: string | null;
 }
 
+/* =========================================================
+   סוגי נתונים
+========================================================= */
+
 export interface ExtendedDonor extends Donor {
   donations?: Donation[];
   files?: Attachment[];
@@ -50,7 +57,19 @@ export interface ExtendedDonor extends Donor {
 
 export interface DonorCardProps {
   donor: ExtendedDonor;
-  onAddDonation?: (e: React.MouseEvent) => void;
+
+  onAddDonation?: (
+    e: React.MouseEvent
+  ) => void;
+
+  /*
+   * נפתח כרטיס תרומה עבור תרומה ספציפית
+   */
+  onViewDonation?: (
+    donation: DonationRecord,
+    e?: React.MouseEvent
+  ) => void;
+
   userRole?: 'admin' | 'manager' | 'viewer';
 }
 
@@ -62,7 +81,9 @@ export function formatDate(date?: string | null) {
   if (!date) return 'לא צוין';
 
   try {
-    return new Date(`${date}T00:00:00`).toLocaleDateString('he-IL');
+    return new Date(
+      `${date}T00:00:00`
+    ).toLocaleDateString('he-IL');
   } catch {
     return date;
   }
@@ -72,7 +93,9 @@ export function formatDate(date?: string | null) {
    סימן מטבע
 ========================================================= */
 
-function getCurrencySymbol(currency?: string | null) {
+function getCurrencySymbol(
+  currency?: string | null
+) {
   if (!currency) return '₪';
 
   const value = currency.toUpperCase();
@@ -126,7 +149,9 @@ function InfoItem({
           shrink-0
         "
       >
-        <span className="text-slate-400">{icon}</span>
+        <span className="text-slate-400">
+          {icon}
+        </span>
       </div>
 
       <div className="min-w-0 flex-1">
@@ -179,7 +204,10 @@ function SectionTitle({
         mb-2
       "
     >
-      <span className="text-slate-400">{icon}</span>
+      <span className="text-slate-400">
+        {icon}
+      </span>
+
       {children}
     </div>
   );
@@ -192,37 +220,63 @@ function SectionTitle({
 export default function DonorCard({
   donor,
   onAddDonation,
+  onViewDonation,
 }: DonorCardProps) {
   /*
    * חשוב:
    * usePermissions נקרא פעם אחת בלבד בתוך DonorCard.
    */
-  const { hasPermission, loadingPerms } = usePermissions();
+  const {
+    hasPermission,
+    loadingPerms,
+  } = usePermissions();
 
   /*
-   * אנחנו הופכים את ההרשאות לערכים בוליאניים.
-   * הערכים האלה יציבים הרבה יותר מ-reference של הפונקציה hasPermission.
+   * הרשאות
    */
-  const canViewDonor = !loadingPerms && hasPermission('donors_view');
+  const canViewDonor =
+    !loadingPerms &&
+    hasPermission('donors_view');
+
   const canViewContact =
-    !loadingPerms && hasPermission('donors_view_contact');
+    !loadingPerms &&
+    hasPermission('donors_view_contact');
+
   const canViewDonations =
-    !loadingPerms && hasPermission('donations_view');
+    !loadingPerms &&
+    hasPermission('donations_view');
+
   const canViewDonationAmount =
-    !loadingPerms && hasPermission('donations_view_amount');
+    !loadingPerms &&
+    hasPermission('donations_view_amount');
+
   const canViewDocuments =
-    !loadingPerms && hasPermission('documents_view');
+    !loadingPerms &&
+    hasPermission('documents_view');
+
   const canCreateDonation =
-    !loadingPerms && hasPermission('donations_create');
+    !loadingPerms &&
+    hasPermission('donations_create');
 
-  const [showNavOptions, setShowNavOptions] = useState(false);
+  const [showNavOptions, setShowNavOptions] =
+    useState(false);
 
-  const [donations, setDonations] = useState<DonationRecord[]>(
+  const [
+    donations,
+    setDonations,
+  ] = useState<DonationRecord[]>(
     donor?.donations || []
   );
 
-  const [donationsLoading, setDonationsLoading] = useState(false);
-  const [donationsError, setDonationsError] = useState(false);
+  const [
+    donationsLoading,
+    setDonationsLoading,
+  ] = useState(false);
+
+  const [
+    donationsError,
+    setDonationsError,
+  ] = useState(false);
 
   /* =======================================================
      כתובת
@@ -245,7 +299,8 @@ export default function DonorCard({
   ]);
 
   const encodedAddress = useMemo(
-    () => encodeURIComponent(fullAddress),
+    () =>
+      encodeURIComponent(fullAddress),
     [fullAddress]
   );
 
@@ -279,11 +334,6 @@ export default function DonorCard({
 
   /* =======================================================
      טעינת תרומות
-     
-     !!! זה התיקון המרכזי ללופ !!!
-     
-     אין כאן hasPermission ב-dependencies.
-     במקום זה יש רק ערכי boolean.
   ======================================================= */
 
   useEffect(() => {
@@ -296,30 +346,21 @@ export default function DonorCard({
           setDonationsLoading(false);
           setDonationsError(false);
         }
+
         return;
       }
 
-      /*
-       * בזמן טעינת ההרשאות לא עושים setState.
-       *
-       * זה חשוב מאוד:
-       * אחרת עלול להיווצר רצף רינדורים בזמן שה-hook
-       * עדיין טוען הרשאות.
-       */
       if (loadingPerms) {
         return;
       }
 
-      /*
-       * אין הרשאת צפייה בתרומות:
-       * לא פונים בכלל ל-Supabase.
-       */
       if (!canViewDonations) {
         if (!cancelled) {
           setDonations([]);
           setDonationsLoading(false);
           setDonationsError(false);
         }
+
         return;
       }
 
@@ -331,10 +372,11 @@ export default function DonorCard({
       try {
         /*
          * אם אין הרשאה לצפות בסכומים,
-         * amount בכלל לא נשלף מהמסד.
+         * amount בכלל לא נשלף.
          */
-        const donationSelect = canViewDonationAmount
-          ? `
+        const donationSelect =
+          canViewDonationAmount
+            ? `
               id,
               donor_id,
               amount,
@@ -346,7 +388,7 @@ export default function DonorCard({
               notes,
               created_at
             `
-          : `
+            : `
               id,
               donor_id,
               currency,
@@ -358,7 +400,10 @@ export default function DonorCard({
               created_at
             `;
 
-        const { data, error } = await supabase
+        const {
+          data,
+          error,
+        } = await supabase
           .from('donations')
           .select(donationSelect)
           .eq('donor_id', donor.id)
@@ -379,27 +424,54 @@ export default function DonorCard({
 
           setDonationsError(true);
           setDonations([]);
+
           return;
         }
 
-        const normalizedDonations: DonationRecord[] = (
-          data || []
-        ).map((donation: any) => ({
-          id: donation.id,
-          donor_id: donation.donor_id ?? null,
-          amount: canViewDonationAmount
-            ? Number(donation.amount) || 0
-            : 0,
-          currency: donation.currency ?? null,
-          payment_method: donation.payment_method ?? null,
-          donation_date: donation.donation_date ?? null,
-          receipt_number: donation.receipt_number ?? null,
-          file_url: donation.file_url ?? null,
-          notes: donation.notes ?? null,
-          created_at: donation.created_at ?? null,
-        }));
+        const normalizedDonations: DonationRecord[] =
+          (data || []).map(
+            (donation: any) => ({
+              id: donation.id,
+              donor_id:
+                donation.donor_id ?? null,
 
-        setDonations(normalizedDonations);
+              amount:
+                canViewDonationAmount
+                  ? Number(
+                      donation.amount
+                    ) || 0
+                  : 0,
+
+              currency:
+                donation.currency ?? null,
+
+              payment_method:
+                donation.payment_method ??
+                null,
+
+              donation_date:
+                donation.donation_date ??
+                null,
+
+              receipt_number:
+                donation.receipt_number ??
+                null,
+
+              file_url:
+                donation.file_url ?? null,
+
+              notes:
+                donation.notes ?? null,
+
+              created_at:
+                donation.created_at ?? null,
+            })
+          );
+
+        setDonations(
+          normalizedDonations
+        );
+
         setDonationsError(false);
       } catch (error) {
         if (cancelled) return;
@@ -417,13 +489,6 @@ export default function DonorCard({
         }
       }
     }
-
-    /*
-     * רישום Audit Log רק לאחר שההרשאות נטענו.
-     *
-     * אין תלות ב-hasPermission עצמו.
-     */
-    
 
     void loadDonations();
 
@@ -447,6 +512,7 @@ export default function DonorCard({
     return (
       <div className="p-8 text-center">
         <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
+
         <div className="text-sm text-slate-500">
           טוען הרשאות...
         </div>
@@ -461,7 +527,7 @@ export default function DonorCard({
   if (!canViewDonor) {
     return (
       <div className="p-8 text-center text-red-600 font-bold">
-        אין גישה למסך תורמים.
+        אין לך הרשאה לצפיה במסך תורמים.
       </div>
     );
   }
@@ -470,11 +536,13 @@ export default function DonorCard({
      סה"כ תרומות
   ======================================================= */
 
-  const totalDonations = donations.reduce(
-    (sum, donation) =>
-      sum + (Number(donation.amount) || 0),
-    0
-  );
+  const totalDonations =
+    donations.reduce(
+      (sum, donation) =>
+        sum +
+        (Number(donation.amount) || 0),
+      0
+    );
 
   const currencies = Array.from(
     new Set(
@@ -493,6 +561,23 @@ export default function DonorCard({
 
   const currencySymbol =
     getCurrencySymbol(mainCurrency);
+
+  /* =======================================================
+     פתיחת פרטי תרומה
+  ======================================================= */
+
+  function handleViewDonation(
+    donation: DonationRecord,
+    e: React.MouseEvent
+  ) {
+    e.stopPropagation();
+
+    if (!onViewDonation) {
+      return;
+    }
+
+    onViewDonation(donation, e);
+  }
 
   /* =======================================================
      Render
@@ -554,7 +639,10 @@ export default function DonorCard({
                 shrink-0
               "
             >
-              {(donor.first_name_he || '?').charAt(0)}
+              {(
+                donor.first_name_he ||
+                '?'
+              ).charAt(0)}
             </div>
 
             <div className="min-w-0">
@@ -566,7 +654,8 @@ export default function DonorCard({
                   truncate
                 "
               >
-                {fullHebrewName || 'ללא שם'}
+                {fullHebrewName ||
+                  'ללא שם'}
               </h3>
 
               <div
@@ -577,7 +666,8 @@ export default function DonorCard({
                   truncate
                 "
               >
-                {fullEnglishName || 'No English name'}
+                {fullEnglishName ||
+                  'No English name'}
               </div>
             </div>
           </div>
@@ -659,7 +749,9 @@ export default function DonorCard({
               "
             >
               <SectionTitle
-                icon={<User className="w-3.5 h-3.5" />}
+                icon={
+                  <User className="w-3.5 h-3.5" />
+                }
               >
                 פרטי קשר
               </SectionTitle>
@@ -673,15 +765,22 @@ export default function DonorCard({
                 "
               >
                 <InfoItem
-                  icon={<Phone className="w-3.5 h-3.5" />}
+                  icon={
+                    <Phone className="w-3.5 h-3.5" />
+                  }
                   label="טלפון 1"
                   value={
                     donor.phone_1 ? (
                       <a
                         href={`tel:${donor.phone_1}`}
                         dir="ltr"
-                        className="hover:text-blue-600 hover:underline"
-                        onClick={(e) => e.stopPropagation()}
+                        className="
+                          hover:text-blue-600
+                          hover:underline
+                        "
+                        onClick={(e) =>
+                          e.stopPropagation()
+                        }
                       >
                         {donor.phone_1}
                       </a>
@@ -691,15 +790,22 @@ export default function DonorCard({
                 />
 
                 <InfoItem
-                  icon={<Phone className="w-3.5 h-3.5" />}
+                  icon={
+                    <Phone className="w-3.5 h-3.5" />
+                  }
                   label="טלפון 2"
                   value={
                     donor.phone_2 ? (
                       <a
                         href={`tel:${donor.phone_2}`}
                         dir="ltr"
-                        className="hover:text-blue-600 hover:underline"
-                        onClick={(e) => e.stopPropagation()}
+                        className="
+                          hover:text-blue-600
+                          hover:underline
+                        "
+                        onClick={(e) =>
+                          e.stopPropagation()
+                        }
                       >
                         {donor.phone_2}
                       </a>
@@ -710,15 +816,22 @@ export default function DonorCard({
 
                 <div className="col-span-2">
                   <InfoItem
-                    icon={<Mail className="w-3.5 h-3.5" />}
+                    icon={
+                      <Mail className="w-3.5 h-3.5" />
+                    }
                     label="אימייל"
                     value={
                       donor.email ? (
                         <a
                           href={`mailto:${donor.email}`}
                           dir="ltr"
-                          className="hover:text-blue-600 hover:underline"
-                          onClick={(e) => e.stopPropagation()}
+                          className="
+                            hover:text-blue-600
+                            hover:underline
+                          "
+                          onClick={(e) =>
+                            e.stopPropagation()
+                          }
                         >
                           {donor.email}
                         </a>
@@ -740,7 +853,9 @@ export default function DonorCard({
             "
           >
             <SectionTitle
-              icon={<MapPin className="w-3.5 h-3.5" />}
+              icon={
+                <MapPin className="w-3.5 h-3.5" />
+              }
             >
               כתובת
             </SectionTitle>
@@ -754,25 +869,33 @@ export default function DonorCard({
               "
             >
               <InfoItem
-                icon={<Globe className="w-3.5 h-3.5" />}
+                icon={
+                  <Globe className="w-3.5 h-3.5" />
+                }
                 label="מדינה"
                 value={donor.country}
               />
 
               <InfoItem
-                icon={<MapPin className="w-3.5 h-3.5" />}
+                icon={
+                  <MapPin className="w-3.5 h-3.5" />
+                }
                 label="עיר"
                 value={donor.city}
               />
 
               <InfoItem
-                icon={<Home className="w-3.5 h-3.5" />}
+                icon={
+                  <Home className="w-3.5 h-3.5" />
+                }
                 label="רחוב"
                 value={donor.street}
               />
 
               <InfoItem
-                icon={<Home className="w-3.5 h-3.5" />}
+                icon={
+                  <Home className="w-3.5 h-3.5" />
+                }
                 label="מספר בית"
                 value={donor.house_number}
               />
@@ -797,6 +920,7 @@ export default function DonorCard({
                       alert(
                         'אין לך הרשאה לצפות בפרטי התורם!'
                       );
+
                       return;
                     }
 
@@ -824,7 +948,9 @@ export default function DonorCard({
 
                 {showNavOptions && (
                   <div
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={(e) =>
+                      e.stopPropagation()
+                    }
                     className="
                       absolute
                       right-0
@@ -845,7 +971,12 @@ export default function DonorCard({
                       href={`https://waze.com/ul?q=${encodedAddress}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="block px-3 py-2 hover:bg-slate-50"
+                      className="
+                        block
+                        px-3
+                        py-2
+                        hover:bg-slate-50
+                      "
                     >
                       Waze
                     </a>
@@ -854,7 +985,12 @@ export default function DonorCard({
                       href={`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="block px-3 py-2 hover:bg-slate-50"
+                      className="
+                        block
+                        px-3
+                        py-2
+                        hover:bg-slate-50
+                      "
                     >
                       Google Maps
                     </a>
@@ -863,7 +999,12 @@ export default function DonorCard({
                       href={`maps://maps.apple.com/?q=${encodedAddress}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="block px-3 py-2 hover:bg-slate-50"
+                      className="
+                        block
+                        px-3
+                        py-2
+                        hover:bg-slate-50
+                      "
                     >
                       Apple Maps
                     </a>
@@ -887,7 +1028,9 @@ export default function DonorCard({
         >
           <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
             <InfoItem
-              icon={<Cake className="w-3.5 h-3.5" />}
+              icon={
+                <Cake className="w-3.5 h-3.5" />
+              }
               label="תאריך לידה"
               value={formatDate(donor.birthday)}
             />
@@ -895,15 +1038,21 @@ export default function DonorCard({
 
           <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
             <InfoItem
-              icon={<Calendar className="w-3.5 h-3.5" />}
+              icon={
+                <Calendar className="w-3.5 h-3.5" />
+              }
               label="יארצייט"
-              value={formatDate(donor.yahrzeit_date)}
+              value={formatDate(
+                donor.yahrzeit_date
+              )}
             />
           </div>
 
           <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
             <InfoItem
-              icon={<User className="w-3.5 h-3.5" />}
+              icon={
+                <User className="w-3.5 h-3.5" />
+              }
               label="איש קשר"
               value={donor.connected_contact}
             />
@@ -911,13 +1060,17 @@ export default function DonorCard({
 
           <div className="rounded-xl bg-slate-50 border border-slate-100 p-3">
             <InfoItem
-              icon={<Clock className="w-3.5 h-3.5" />}
+              icon={
+                <Clock className="w-3.5 h-3.5" />
+              }
               label="תאריך הצטרפות"
               value={
                 donor.created_at
                   ? new Date(
                       donor.created_at
-                    ).toLocaleDateString('he-IL')
+                    ).toLocaleDateString(
+                      'he-IL'
+                    )
                   : 'לא צוין'
               }
             />
@@ -1012,7 +1165,9 @@ export default function DonorCard({
               "
             >
               <SectionTitle
-                icon={<CreditCard className="w-3.5 h-3.5" />}
+                icon={
+                  <CreditCard className="w-3.5 h-3.5" />
+                }
               >
                 תרומות משויכות
               </SectionTitle>
@@ -1067,19 +1222,20 @@ export default function DonorCard({
               </div>
             )}
 
-            {!donationsLoading && donationsError && (
-              <div
-                className="
-                  px-4 py-4
-                  text-[11px]
-                  text-red-500
-                  bg-red-50
-                "
-              >
-                לא ניתן לטעון את התרומות
-                של התורם.
-              </div>
-            )}
+            {!donationsLoading &&
+              donationsError && (
+                <div
+                  className="
+                    px-4 py-4
+                    text-[11px]
+                    text-red-500
+                    bg-red-50
+                  "
+                >
+                  לא ניתן לטעון את התרומות
+                  של התורם.
+                </div>
+              )}
 
             {!donationsLoading &&
               !donationsError &&
@@ -1106,112 +1262,31 @@ export default function DonorCard({
                     gap-2
                   "
                 >
-                  {donations.map((donation) => {
-                    const symbol =
-                      getCurrencySymbol(
-                        donation.currency
-                      );
+                  {donations.map(
+                    (donation) => {
+                      const symbol =
+                        getCurrencySymbol(
+                          donation.currency
+                        );
 
-                    return (
-                      <div
-                        key={donation.id}
-                        className="
-                          bg-slate-50
-                          rounded-lg
-                          px-3 py-2.5
-                          border border-slate-100
-                          hover:bg-slate-100
-                          transition
-                        "
-                      >
+                      return (
                         <div
+                          key={donation.id}
                           className="
-                            flex
-                            items-center
-                            justify-between
-                            gap-3
+                            bg-slate-50
+                            rounded-lg
+                            px-3 py-2.5
+                            border border-slate-100
+                            hover:bg-slate-100
+                            transition
                           "
                         >
-                          <div
-                            className="
-                              flex
-                              items-center
-                              gap-3
-                              min-w-0
-                            "
-                          >
-                            <div
-                              className="
-                                w-8 h-8
-                                rounded-lg
-                                bg-emerald-50
-                                border border-emerald-100
-                                flex
-                                items-center
-                                justify-center
-                                shrink-0
-                              "
-                            >
-                              <CreditCard className="w-4 h-4 text-emerald-600" />
-                            </div>
-
-                            <div className="min-w-0">
-                              {canViewDonationAmount && (
-                                <div
-                                  className="
-                                    text-sm
-                                    font-bold
-                                    text-slate-800
-                                  "
-                                >
-                                  {Number(
-                                    donation.amount
-                                  ).toLocaleString(
-                                    'he-IL',
-                                    {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 2,
-                                    }
-                                  )}{' '}
-                                  {symbol}
-                                </div>
-                              )}
-
-                              <div
-                                className="
-                                  text-[10px]
-                                  text-slate-400
-                                "
-                              >
-                                {donation.payment_method ||
-                                  'אמצעי תשלום לא צוין'}
-                              </div>
-                            </div>
-                          </div>
+                          {/* ==================================
+                              שורה ראשית
+                          ================================== */}
 
                           <div
                             className="
-                              text-[10px]
-                              text-slate-400
-                              shrink-0
-                              text-left
-                            "
-                          >
-                            {formatDate(
-                              donation.donation_date
-                            )}
-                          </div>
-                        </div>
-
-                        {(donation.receipt_number ||
-                          donation.notes ||
-                          donation.file_url) && (
-                          <div
-                            className="
-                              mt-2
-                              pt-2
-                              border-t
-                              border-slate-200
                               flex
                               items-center
                               justify-between
@@ -1226,64 +1301,208 @@ export default function DonorCard({
                                 min-w-0
                               "
                             >
-                              {donation.receipt_number && (
+                              <div
+                                className="
+                                  w-8 h-8
+                                  rounded-lg
+                                  bg-emerald-50
+                                  border border-emerald-100
+                                  flex
+                                  items-center
+                                  justify-center
+                                  shrink-0
+                                "
+                              >
+                                <CreditCard className="w-4 h-4 text-emerald-600" />
+                              </div>
+
+                              <div className="min-w-0">
+                                {canViewDonationAmount && (
+                                  <div
+                                    className="
+                                      text-sm
+                                      font-bold
+                                      text-slate-800
+                                    "
+                                  >
+                                    {Number(
+                                      donation.amount
+                                    ).toLocaleString(
+                                      'he-IL',
+                                      {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2,
+                                      }
+                                    )}{' '}
+                                    {symbol}
+                                  </div>
+                                )}
+
                                 <div
+                                  className="
+                                    text-[10px]
+                                    text-slate-400
+                                  "
+                                >
+                                  {donation.payment_method ||
+                                    'אמצעי תשלום לא צוין'}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div
+                              className="
+                                flex
+                                items-center
+                                gap-2
+                                shrink-0
+                              "
+                            >
+                              <div
+                                className="
+                                  text-[10px]
+                                  text-slate-400
+                                  text-left
+                                "
+                              >
+                                {formatDate(
+                                  donation.donation_date
+                                )}
+                              </div>
+
+                              {/* ==================================
+                                  הכפתור החדש
+                                  לכל תרומה בנפרד
+                              ================================== */}
+
+                              {onViewDonation && (
+                                <button
+                                  type="button"
+                                  onClick={(e) =>
+                                    handleViewDonation(
+                                      donation,
+                                      e
+                                    )
+                                  }
+                                  className="
+                                    flex
+                                    items-center
+                                    gap-1.5
+                                    px-3
+                                    py-1.5
+                                    rounded-lg
+                                    bg-blue-50
+                                    border
+                                    border-blue-200
+                                    text-blue-600
+                                    hover:bg-blue-100
+                                    hover:text-blue-700
+                                    text-[10px]
+                                    font-semibold
+                                    transition
+                                    whitespace-nowrap
+                                  "
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  כניסה לפרטי תרומה
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* ==================================
+                              פרטים נוספים
+                          ================================== */}
+
+                          {(donation.receipt_number ||
+                            donation.notes ||
+                            donation.file_url) && (
+                            <div
+                              className="
+                                mt-2
+                                pt-2
+                                border-t
+                                border-slate-200
+                                flex
+                                items-center
+                                justify-between
+                                gap-3
+                              "
+                            >
+                              <div
+                                className="
+                                  flex
+                                  items-center
+                                  gap-3
+                                  min-w-0
+                                "
+                              >
+                                {donation.receipt_number && (
+                                  <div
+                                    className="
+                                      flex
+                                      items-center
+                                      gap-1
+                                      text-[10px]
+                                      text-slate-500
+                                    "
+                                  >
+                                    <Receipt className="w-3 h-3" />
+
+                                    קבלה:{' '}
+                                    {
+                                      donation.receipt_number
+                                    }
+                                  </div>
+                                )}
+
+                                {donation.notes && (
+                                  <div
+                                    className="
+                                      text-[10px]
+                                      text-slate-400
+                                      truncate
+                                    "
+                                    title={
+                                      donation.notes
+                                    }
+                                  >
+                                    {donation.notes}
+                                  </div>
+                                )}
+                              </div>
+
+                              {donation.file_url && (
+                                <a
+                                  href={
+                                    donation.file_url
+                                  }
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  onClick={(e) =>
+                                    e.stopPropagation()
+                                  }
                                   className="
                                     flex
                                     items-center
                                     gap-1
                                     text-[10px]
-                                    text-slate-500
+                                    text-blue-600
+                                    hover:text-blue-700
+                                    hover:underline
+                                    shrink-0
                                   "
                                 >
-                                  <Receipt className="w-3 h-3" />
-                                  קבלה:{' '}
-                                  {donation.receipt_number}
-                                </div>
-                              )}
-
-                              {donation.notes && (
-                                <div
-                                  className="
-                                    text-[10px]
-                                    text-slate-400
-                                    truncate
-                                  "
-                                  title={donation.notes}
-                                >
-                                  {donation.notes}
-                                </div>
+                                  <Paperclip className="w-3 h-3" />
+                                  מסמך
+                                </a>
                               )}
                             </div>
-
-                            {donation.file_url && (
-                              <a
-                                href={donation.file_url}
-                                target="_blank"
-                                rel="noreferrer"
-                                onClick={(e) =>
-                                  e.stopPropagation()
-                                }
-                                className="
-                                  flex
-                                  items-center
-                                  gap-1
-                                  text-[10px]
-                                  text-blue-600
-                                  hover:text-blue-700
-                                  hover:underline
-                                  shrink-0
-                                "
-                              >
-                                <Paperclip className="w-3 h-3" />
-                                מסמך
-                              </a>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                          )}
+                        </div>
+                      );
+                    }
+                  )}
                 </div>
               )}
           </div>
@@ -1313,9 +1532,12 @@ export default function DonorCard({
                 "
               >
                 <SectionTitle
-                  icon={<Paperclip className="w-3.5 h-3.5" />}
+                  icon={
+                    <Paperclip className="w-3.5 h-3.5" />
+                  }
                 >
-                  קבצים ומסמכים ({donor.files.length})
+                  קבצים ומסמכים (
+                  {donor.files.length})
                 </SectionTitle>
               </div>
 
@@ -1327,44 +1549,46 @@ export default function DonorCard({
                   gap-2
                 "
               >
-                {donor.files.map((file) => (
-                  <a
-                    key={file.id}
-                    href={file.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(e) =>
-                      e.stopPropagation()
-                    }
-                    className="
-                      bg-slate-50
-                      hover:bg-blue-50
-                      p-2
-                      rounded-lg
-                      text-[11px]
-                      flex
-                      items-center
-                      justify-between
-                      gap-2
-                      border border-slate-100
-                      text-slate-700
-                      hover:text-blue-700
-                      transition
-                    "
-                  >
-                    <span className="truncate font-medium">
-                      {file.name}
-                    </span>
-
-                    <Download
+                {donor.files.map(
+                  (file) => (
+                    <a
+                      key={file.id}
+                      href={file.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) =>
+                        e.stopPropagation()
+                      }
                       className="
-                        w-3.5 h-3.5
-                        shrink-0
-                        text-slate-400
+                        bg-slate-50
+                        hover:bg-blue-50
+                        p-2
+                        rounded-lg
+                        text-[11px]
+                        flex
+                        items-center
+                        justify-between
+                        gap-2
+                        border border-slate-100
+                        text-slate-700
+                        hover:text-blue-700
+                        transition
                       "
-                    />
-                  </a>
-                ))}
+                    >
+                      <span className="truncate font-medium">
+                        {file.name}
+                      </span>
+
+                      <Download
+                        className="
+                          w-3.5 h-3.5
+                          shrink-0
+                          text-slate-400
+                        "
+                      />
+                    </a>
+                  )
+                )}
               </div>
             </div>
           )}
@@ -1392,7 +1616,9 @@ export default function DonorCard({
                 "
               >
                 <SectionTitle
-                  icon={<Calendar className="w-3.5 h-3.5" />}
+                  icon={
+                    <Calendar className="w-3.5 h-3.5" />
+                  }
                 >
                   תאריכים מיוחדים
                 </SectionTitle>
@@ -1407,7 +1633,10 @@ export default function DonorCard({
                 "
               >
                 {donor.special_dates.map(
-                  (sd: any, index: number) => (
+                  (
+                    sd: any,
+                    index: number
+                  ) => (
                     <div
                       key={index}
                       className="
@@ -1499,7 +1728,8 @@ export default function DonorCard({
               leading-relaxed
             "
           >
-            {donor.notes || 'אין הערות'}
+            {donor.notes ||
+              'אין הערות'}
           </p>
         </div>
       </div>
@@ -1508,64 +1738,53 @@ export default function DonorCard({
           FOOTER
       ================================================= */}
 
-      {onAddDonation && canCreateDonation && (
-        <div
-          className="
-            px-5 py-3
-            border-t
-            border-slate-100
-            bg-slate-50
-          "
-        >
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-
-              if (!canCreateDonation) {
-                alert(
-                  'אין לך הרשאה ליצור תרומות!'
-                );
-                return;
-              }
-
-              void logActivity(
-                'create',
-                'donations',
-                `נפתח טופס רישום תרומה עבור התורם: ${
-                  fullHebrewName || 'ללא שם'
-                }`
-              ).catch((error) => {
-                console.error(
-                  'שגיאה ברישום פתיחת טופס תרומה ללוג:',
-                  error
-                );
-              });
-
-              onAddDonation(e);
-            }}
+      {onAddDonation &&
+        canCreateDonation && (
+          <div
             className="
-              w-full
-              py-2
-              bg-emerald-600
-              hover:bg-emerald-700
-              text-white
-              font-medium
-              text-xs
-              rounded-xl
-              transition
-              flex
-              items-center
-              justify-center
-              gap-1.5
-              shadow-sm
+              px-5 py-3
+              border-t
+              border-slate-100
+              bg-slate-50
             "
           >
-            <PlusCircle className="w-3.5 h-3.5" />
-            רישום תרומה
-          </button>
-        </div>
-      )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+
+                if (!canCreateDonation) {
+                  alert(
+                    'אין לך הרשאה ליצור תרומות!'
+                  );
+
+                  return;
+                }
+
+                onAddDonation(e);
+              }}
+              className="
+                w-full
+                py-2
+                bg-emerald-600
+                hover:bg-emerald-700
+                text-white
+                font-medium
+                text-xs
+                rounded-xl
+                transition
+                flex
+                items-center
+                justify-center
+                gap-1.5
+                shadow-sm
+              "
+            >
+              <PlusCircle className="w-3.5 h-3.5" />
+              רישום תרומה
+            </button>
+          </div>
+        )}
     </div>
   );
 }

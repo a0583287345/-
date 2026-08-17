@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Donor } from '@/types/donor';
 import { usePermissions } from '@/hooks/usePermissions';
-import { logActivity } from '@/lib/logger';
+import { supabase } from '@/lib/supabase';
 
 import {
   Search,
@@ -20,6 +20,7 @@ import {
   Receipt,
   Paperclip,
   StickyNote,
+  ExternalLink,
 } from 'lucide-react';
 
 interface Donation {
@@ -35,7 +36,19 @@ interface Donation {
   created_at: string | null;
 }
 
+interface DonationDocument {
+  id: string;
+  donor_id: string | null;
+  donation_id: string | null;
+  file_name: string | null;
+  file_url: string | null;
+  file_type: string | null;
+  created_at: string | null;
+}
+
 type DonationSort =
+  | 'created_desc'
+  | 'created_asc'
   | 'date_desc'
   | 'date_asc'
   | 'amount_desc'
@@ -114,6 +127,94 @@ export default function DonationsTab({
   onViewDonor,
 }: DonationsTabProps) {
   /* ============================================================
+     הרשאות
+  ============================================================ */
+
+  const {
+    hasPermission,
+    loadingPerms,
+  } = usePermissions();
+
+  /* ============================================================
+     מסמכים של תרומות
+  ============================================================ */
+
+  const [donationDocuments, setDonationDocuments] =
+    useState<Record<string, DonationDocument[]>>({});
+
+  const [loadingDonationDocuments, setLoadingDonationDocuments] =
+    useState(false);
+
+  useEffect(() => {
+    async function loadDonationDocuments() {
+      if (!donations || donations.length === 0) {
+        setDonationDocuments({});
+        return;
+      }
+
+      setLoadingDonationDocuments(true);
+
+      try {
+        const donationIds = donations.map(
+          (donation) => donation.id
+        );
+
+        const { data, error } = await supabase
+          .from('donor_documents')
+          .select(
+            'id, donor_id, donation_id, file_name, file_url, file_type, created_at'
+          )
+          .in('donation_id', donationIds)
+          .order('created_at', {
+            ascending: false,
+          });
+
+        if (error) {
+          console.error(
+            'Error loading donation documents:',
+            error
+          );
+
+          setDonationDocuments({});
+          return;
+        }
+
+        const grouped: Record<
+          string,
+          DonationDocument[]
+        > = {};
+
+        (data || []).forEach((document) => {
+          if (!document.donation_id) {
+            return;
+          }
+
+          if (!grouped[document.donation_id]) {
+            grouped[document.donation_id] = [];
+          }
+
+          grouped[document.donation_id].push(
+            document as DonationDocument
+          );
+        });
+
+        setDonationDocuments(grouped);
+      } catch (error) {
+        console.error(
+          'Unexpected error loading donation documents:',
+          error
+        );
+
+        setDonationDocuments({});
+      } finally {
+        setLoadingDonationDocuments(false);
+      }
+    }
+
+    loadDonationDocuments();
+  }, [donations]);
+
+  /* ============================================================
      חיפוש
   ============================================================ */
 
@@ -154,11 +255,17 @@ export default function DonationsTab({
   const [donationHasNotes, setDonationHasNotes] =
     useState<'all' | 'yes' | 'no'>('all');
 
+  /*
+   * ברירת המחדל היא מיון לפי תאריך יצירת הרשומה.
+   * חדש -> ישן.
+   */
   const [donationSort, setDonationSort] =
-    useState<DonationSort>('date_desc');
+    useState<DonationSort>('created_desc');
 
-  const [showAdvancedDonationFilters, setShowAdvancedDonationFilters] =
-    useState(false);
+  const [
+    showAdvancedDonationFilters,
+    setShowAdvancedDonationFilters,
+  ] = useState(false);
 
   /* ============================================================
      מטבעות
@@ -193,7 +300,26 @@ export default function DonationsTab({
   }, [donations]);
 
   /* ============================================================
-     סינון
+     פונקציה שבודקת האם לתרומה יש קובץ
+  ============================================================ */
+
+  function donationHasDocuments(
+    donation: Donation
+  ) {
+    const documents =
+      donationDocuments[donation.id] || [];
+
+    return (
+      !!donation.file_url?.trim() ||
+      documents.some(
+        (document) =>
+          !!document.file_url?.trim()
+      )
+    );
+  }
+
+  /* ============================================================
+     סינון + מיון
   ============================================================ */
 
   const filteredDonations = useMemo(() => {
@@ -338,7 +464,7 @@ export default function DonationsTab({
           !!donation.receipt_number?.trim();
 
         const hasFile =
-          !!donation.file_url?.trim();
+          donationHasDocuments(donation);
 
         const hasNotes =
           !!donation.notes?.trim();
@@ -391,6 +517,31 @@ export default function DonationsTab({
 
     result.sort((a, b) => {
       switch (donationSort) {
+        /*
+         * המיון החשוב:
+         * לפי created_at ולא donation_date.
+         */
+
+        case 'created_asc':
+          return (
+            new Date(
+              a.created_at || 0
+            ).getTime() -
+            new Date(
+              b.created_at || 0
+            ).getTime()
+          );
+
+        case 'created_desc':
+          return (
+            new Date(
+              b.created_at || 0
+            ).getTime() -
+            new Date(
+              a.created_at || 0
+            ).getTime()
+          );
+
         case 'date_asc':
           return (
             new Date(
@@ -398,6 +549,16 @@ export default function DonationsTab({
             ).getTime() -
             new Date(
               b.donation_date || 0
+            ).getTime()
+          );
+
+        case 'date_desc':
+          return (
+            new Date(
+              b.donation_date || 0
+            ).getTime() -
+            new Date(
+              a.donation_date || 0
             ).getTime()
           );
 
@@ -433,14 +594,13 @@ export default function DonationsTab({
             'he'
           );
 
-        case 'date_desc':
         default:
           return (
             new Date(
-              b.donation_date || 0
+              b.created_at || 0
             ).getTime() -
             new Date(
-              a.donation_date || 0
+              a.created_at || 0
             ).getTime()
           );
       }
@@ -450,6 +610,7 @@ export default function DonationsTab({
   }, [
     donations,
     donorMap,
+    donationDocuments,
     donationSearch,
     donationCurrency,
     donationPaymentMethod,
@@ -502,7 +663,12 @@ export default function DonationsTab({
     setDonationHasReceipt('all');
     setDonationHasFile('all');
     setDonationHasNotes('all');
-    setDonationSort('date_desc');
+
+    /*
+     * לאחר ניקוי הסינון חוזרים לברירת המחדל:
+     * תאריך יצירה - חדש לישן.
+     */
+    setDonationSort('created_desc');
   }
 
   /* ============================================================
@@ -546,6 +712,7 @@ export default function DonationsTab({
       'מטבע',
       'אמצעי תשלום',
       'תאריך תרומה',
+      'תאריך יצירה',
       'מספר קבלה',
       'קובץ מצורף',
       'הערות',
@@ -574,8 +741,11 @@ export default function DonationsTab({
             donation.currency || 'ILS',
             donation.payment_method || '',
             donation.donation_date || '',
+            donation.created_at || '',
             donation.receipt_number || '',
-            donation.file_url
+            donationHasDocuments(
+              donation
+            )
               ? 'כן'
               : 'לא',
             donation.notes || '',
@@ -630,16 +800,30 @@ export default function DonationsTab({
   }
 
   /* ============================================================
+     הרשאות
+  ============================================================ */
+
+  if (loadingPerms) {
+    return (
+      <div className="p-8 text-center">
+        טוען הרשאות...
+      </div>
+    );
+  }
+
+  if (
+    !hasPermission('donations_view')
+  ) {
+    return (
+      <div className="p-8 text-center text-red-600 font-bold">
+        אין גישה למסך תרומות.
+      </div>
+    );
+  }
+
+  /* ============================================================
      RENDER
   ============================================================ */
-// ---> 2. החסימה מתחילה כאן
-  const { hasPermission, loadingPerms } = usePermissions();
-
-  if (loadingPerms) return <div className="p-8 text-center">טוען הרשאות...</div>;
-  if (!hasPermission('donations_view')) {
-    return <div className="p-8 text-center text-red-600 font-bold">אין גישה למסך תרומות.</div>;
-  }
-  // <--- סוף החסימה
 
   return (
     <div className="p-4 md:p-5 space-y-5">
@@ -740,11 +924,11 @@ export default function DonationsTab({
             title="רענון תרומות"
           >
             <RefreshCw
-              className={`
-                w-4
-                h-4
-                ${loading ? 'animate-spin' : ''}
-              `}
+              className={`w-4 h-4 ${
+                loading
+                  ? 'animate-spin'
+                  : ''
+              }`}
             />
           </button>
         </div>
@@ -871,9 +1055,7 @@ export default function DonationsTab({
           )}
         </div>
 
-        {/* ====================================================
-            פילטרים מהירים
-        ==================================================== */}
+        {/* פילטרים מהירים */}
 
         <div
           className="
@@ -1016,12 +1198,20 @@ export default function DonationsTab({
               text-slate-700
             "
           >
+            <option value="created_desc">
+              נוצרה: חדש → ישן
+            </option>
+
+            <option value="created_asc">
+              נוצרה: ישן → חדש
+            </option>
+
             <option value="date_desc">
-              חדש → ישן
+              תאריך תרומה: חדש → ישן
             </option>
 
             <option value="date_asc">
-              ישן → חדש
+              תאריך תרומה: ישן → חדש
             </option>
 
             <option value="amount_desc">
@@ -1110,9 +1300,7 @@ export default function DonationsTab({
           </select>
         </div>
 
-        {/* ====================================================
-            סינון מתקדם
-        ==================================================== */}
+        {/* סינון מתקדם */}
 
         {showAdvancedDonationFilters && (
           <div
@@ -1437,7 +1625,6 @@ export default function DonationsTab({
       ====================================================== */}
 
       {loading ? (
-
         <div
           className="
             bg-white
@@ -1461,9 +1648,7 @@ export default function DonationsTab({
 
           טוען תרומות...
         </div>
-
       ) : filteredDonations.length === 0 ? (
-
         <div
           className="
             bg-white
@@ -1492,9 +1677,7 @@ export default function DonationsTab({
             נסה לשנות את תנאי החיפוש או הסינון
           </div>
         </div>
-
       ) : (
-
         <div
           className="
             bg-white
@@ -1531,7 +1714,11 @@ export default function DonationsTab({
                   </th>
 
                   <th className="p-3.5 font-medium">
-                    תאריך
+                    תאריך תרומה
+                  </th>
+
+                  <th className="p-3.5 font-medium">
+                    נוצרה
                   </th>
 
                   <th className="p-3.5 font-medium">
@@ -1562,6 +1749,24 @@ export default function DonationsTab({
                             donation.donor_id
                           )
                         : null;
+
+                    const documents =
+                      donationDocuments[
+                        donation.id
+                      ] || [];
+
+                    const validDocuments =
+                      documents.filter(
+                        (document) =>
+                          !!document.file_url?.trim()
+                      );
+
+                    const hasDonationFile =
+                      !!donation.file_url?.trim() ||
+                      validDocuments.length > 0;
+
+                    const firstDocument =
+                      validDocuments[0];
 
                     return (
                       <tr
@@ -1656,6 +1861,26 @@ export default function DonationsTab({
                         </td>
 
                         <td className="p-3.5">
+                          <div
+                            className="
+                              flex
+                              items-center
+                              gap-1.5
+                              text-slate-600
+                            "
+                            title={
+                              donation.created_at || ''
+                            }
+                          >
+                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+
+                            {formatDate(
+                              donation.created_at
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="p-3.5">
                           {donation.receipt_number ? (
                             <span
                               className="
@@ -1683,31 +1908,91 @@ export default function DonationsTab({
                         </td>
 
                         <td className="p-3.5">
-                          {donation.file_url ? (
-                            <a
-                              href={donation.file_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) =>
-                                e.stopPropagation()
-                              }
-                              className="
-                                inline-flex
-                                items-center
-                                gap-1
-                                bg-purple-50
-                                text-purple-700
-                                border
-                                border-purple-200
-                                rounded-lg
-                                px-2
-                                py-1
-                                hover:bg-purple-100
-                              "
-                            >
-                              <Paperclip className="w-3 h-3" />
-                              צפייה
-                            </a>
+                          {hasDonationFile ? (
+                            firstDocument?.file_url ? (
+                              <a
+                                href={
+                                  firstDocument.file_url
+                                }
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) =>
+                                  e.stopPropagation()
+                                }
+                                className="
+                                  inline-flex
+                                  items-center
+                                  gap-1
+                                  bg-purple-50
+                                  text-purple-700
+                                  border
+                                  border-purple-200
+                                  rounded-lg
+                                  px-2
+                                  py-1
+                                  hover:bg-purple-100
+                                "
+                                title={
+                                  firstDocument.file_name ||
+                                  'מסמך מצורף'
+                                }
+                              >
+                                <Paperclip className="w-3 h-3" />
+
+                                צפייה
+                              </a>
+                            ) : donation.file_url ? (
+                              <a
+                                href={
+                                  donation.file_url
+                                }
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) =>
+                                  e.stopPropagation()
+                                }
+                                className="
+                                  inline-flex
+                                  items-center
+                                  gap-1
+                                  bg-purple-50
+                                  text-purple-700
+                                  border
+                                  border-purple-200
+                                  rounded-lg
+                                  px-2
+                                  py-1
+                                  hover:bg-purple-100
+                                "
+                              >
+                                <ExternalLink className="w-3 h-3" />
+
+                                צפייה
+                              </a>
+                            ) : (
+                              <span
+                                className="
+                                  inline-flex
+                                  items-center
+                                  gap-1
+                                  bg-purple-50
+                                  text-purple-700
+                                  border
+                                  border-purple-200
+                                  rounded-lg
+                                  px-2
+                                  py-1
+                                "
+                              >
+                                <Paperclip className="w-3 h-3" />
+
+                                יש קובץ
+                              </span>
+                            )
+                          ) : loadingDonationDocuments ? (
+                            <span className="text-slate-400">
+                              בודק...
+                            </span>
                           ) : (
                             <span className="text-slate-400">
                               אין
@@ -1789,9 +2074,6 @@ export default function DonationsTab({
           </div>
         </div>
       )}
-
-     
-     
     </div>
   );
 }

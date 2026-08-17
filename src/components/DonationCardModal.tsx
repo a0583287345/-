@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { logActivity } from '@/lib/logger';
 import { usePermissions } from '@/hooks/usePermissions';
-import { Protect } from '@/components/Protect'; 
+import { Protect } from '@/components/Protect';
 
 import {
   Calendar,
@@ -15,6 +15,9 @@ import {
   StickyNote,
   X,
   Trash2,
+  Loader2,
+  Paperclip,
+  ExternalLink,
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
@@ -40,6 +43,16 @@ interface Donor {
   last_name_en?: string | null;
 }
 
+interface DonationDocument {
+  id: string;
+  donor_id: string | null;
+  donation_id: string | null;
+  file_name: string | null;
+  file_url: string | null;
+  file_type: string | null;
+  created_at: string | null;
+}
+
 interface DonationCardModalProps {
   isOpen: boolean;
   donation: Donation;
@@ -58,14 +71,60 @@ export default function DonationCardModal({
   onDeleted,
 }: DonationCardModalProps) {
   const [isProcessing, setIsProcessing] = useState(false);
-  const { hasPermission } = usePermissions(); 
+
+  const [documents, setDocuments] = useState<DonationDocument[]>([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
+
+  const { hasPermission } = usePermissions();
+
+  useEffect(() => {
+    if (!isOpen || !donation?.id) {
+      return;
+    }
+
+    fetchDonationDocuments();
+  }, [isOpen, donation?.id]);
+
+  async function fetchDonationDocuments() {
+    setLoadingDocuments(true);
+    setDocumentsError(null);
+
+    try {
+      const { data, error } = await supabase
+        .from('donor_documents')
+        .select(
+          'id, donor_id, donation_id, file_name, file_url, file_type, created_at'
+        )
+        .eq('donation_id', donation.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error loading donation documents:', error);
+        setDocumentsError('לא ניתן לטעון את המסמכים');
+        setDocuments([]);
+        return;
+      }
+
+      setDocuments((data || []) as DonationDocument[]);
+    } catch (error) {
+      console.error('Unexpected error loading donation documents:', error);
+      setDocumentsError('אירעה שגיאה בטעינת המסמכים');
+      setDocuments([]);
+    } finally {
+      setLoadingDocuments(false);
+    }
+  }
 
   if (!isOpen) {
     return null;
   }
 
   const donorName = donor
-    ? `${donor.first_name_he || ''} ${donor.last_name_he || ''}`.trim()
+    ? [donor.first_name_he, donor.last_name_he]
+        .filter(Boolean)
+        .join(' ')
+        .trim() || 'תורם לא ידוע'
     : 'תורם לא ידוע';
 
   const formattedAmount = new Intl.NumberFormat('he-IL', {
@@ -88,12 +147,11 @@ export default function DonationCardModal({
     GBP: '£',
   };
 
-  const currencySymbol =
-    currencyLabels[donation.currency || 'ILS'] ||
-    donation.currency ||
-    '₪';
+  const currencyCode = donation.currency || 'ILS';
 
-  // --- פעולת מחיקה ---
+  const currencySymbol =
+    currencyLabels[currencyCode] || donation.currency || '₪';
+
   async function handleDelete() {
     if (!hasPermission('donations_delete')) {
       alert('אין לך הרשאה למחוק תרומות!');
@@ -122,7 +180,11 @@ export default function DonationCardModal({
         return;
       }
 
-      await logActivity('DELETE', 'donations', `מחק תרומה ע"ס ${currencySymbol}${formattedAmount} של התורם ${donorName} (מזהה: ${donation.id})`);
+      await logActivity(
+        'DELETE',
+        'donations',
+        `מחק תרומה ע"ס ${currencySymbol}${formattedAmount} של התורם ${donorName} (מזהה: ${donation.id})`
+      );
 
       onDeleted?.();
       onClose();
@@ -134,23 +196,13 @@ export default function DonationCardModal({
     }
   }
 
-  // --- פעולת פתיחת עריכה ---
-  async function handleEditClick() {
+  function handleEditClick() {
     if (!hasPermission('donations_edit')) {
       alert('אין לך הרשאה לערוך תרומות!');
       return;
     }
 
-    try {
-      // רישום הפעולה ללוג לפני פתיחת העריכה
-      await logActivity('EDIT_ACCESS', 'donations', `ניגש לערוך תרומה ע"ס ${currencySymbol}${formattedAmount} של התורם ${donorName} (מזהה: ${donation.id})`);
-      
-      onEdit?.();
-    } catch (error) {
-      console.error('Error logging edit activity:', error);
-      // במקרה של שגיאה בלוג עדיין נאפשר לערוך כדי לא לתקוע את המשתמש
-      onEdit?.(); 
-    }
+    onEdit?.();
   }
 
   return (
@@ -182,7 +234,7 @@ export default function DonationCardModal({
           max-h-[90vh]
           overflow-y-auto
         "
-        onClick={(e) => e.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
       >
         <button
           type="button"
@@ -239,13 +291,13 @@ export default function DonationCardModal({
               <h2 className="text-xl font-bold text-slate-800">
                 פרטי תרומה
               </h2>
+
               <p className="text-xs text-slate-400 mt-1">
                 פרטי התרומה המלאים
               </p>
             </div>
           </div>
 
-          {/* הגנה על צפייה בסכום */}
           <Protect permId="donations_view_amount">
             <div
               className="
@@ -271,7 +323,7 @@ export default function DonationCardModal({
               </div>
 
               <div className="text-xs text-emerald-600 mt-2">
-                {donation.currency || 'ILS'}
+                {currencyCode}
               </div>
             </div>
           </Protect>
@@ -282,6 +334,7 @@ export default function DonationCardModal({
                 <User className="w-4 h-4 text-slate-400" />
                 <span className="text-xs text-slate-400">תורם</span>
               </div>
+
               <div className="font-bold text-sm text-slate-800">
                 {donorName}
               </div>
@@ -290,8 +343,11 @@ export default function DonationCardModal({
             <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Calendar className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-400">תאריך התרומה</span>
+                <span className="text-xs text-slate-400">
+                  תאריך התרומה
+                </span>
               </div>
+
               <div className="font-bold text-sm text-slate-800">
                 {formattedDate}
               </div>
@@ -300,8 +356,11 @@ export default function DonationCardModal({
             <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-2">
                 <CreditCard className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-400">אמצעי תשלום</span>
+                <span className="text-xs text-slate-400">
+                  אמצעי תשלום
+                </span>
               </div>
+
               <div className="font-bold text-sm text-slate-800">
                 {donation.payment_method || '-'}
               </div>
@@ -310,52 +369,211 @@ export default function DonationCardModal({
             <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Hash className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-400">מספר קבלה</span>
+                <span className="text-xs text-slate-400">
+                  מספר קבלה
+                </span>
               </div>
-              <div dir="ltr" className="font-bold text-sm text-slate-800">
-                {donation.receipt_number || '-'}
-              </div>
-            </div>
 
-            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 md:col-span-2">
-              <div className="flex items-center gap-2 mb-2">
-                <FileCheck className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-400">מזהה תרומה</span>
-              </div>
-              <div dir="ltr" className="text-[11px] text-slate-600 break-all font-mono">
-                {donation.id}
+              <div
+                dir="ltr"
+                className="font-bold text-sm text-slate-800"
+              >
+                {donation.receipt_number || '-'}
               </div>
             </div>
 
             <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
               <div className="flex items-center gap-2 mb-2">
                 <Calendar className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-400">נרשם במערכת</span>
+                <span className="text-xs text-slate-400">
+                  נרשם במערכת
+                </span>
               </div>
+
               <div className="font-bold text-sm text-slate-800">
                 {createdDate}
               </div>
             </div>
 
-            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <FileText className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-400">קובץ מצורף</span>
+            <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 md:col-span-2">
+              <div className="flex items-center gap-2 mb-3">
+                <Paperclip className="w-4 h-4 text-slate-400" />
+
+                <span className="text-xs text-slate-400">
+                  מסמכים / קבלות
+                </span>
+
+                {!loadingDocuments && documents.length > 0 && (
+                  <span className="mr-auto text-[11px] bg-blue-50 text-blue-600 border border-blue-100 rounded-full px-2 py-0.5">
+                    {documents.length}{' '}
+                    {documents.length === 1 ? 'מסמך' : 'מסמכים'}
+                  </span>
+                )}
               </div>
-              {donation.file_url ? (
-                <a
-                  href={donation.file_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
-                  className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+
+              {loadingDocuments ? (
+                <div className="flex items-center justify-center gap-2 py-5 text-sm text-slate-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  טוען מסמכים...
+                </div>
+              ) : documentsError ? (
+                <div className="text-sm text-red-500 bg-red-50 border border-red-100 rounded-lg p-3">
+                  {documentsError}
+                </div>
+              ) : documents.length > 0 ? (
+                <div className="space-y-2">
+                  {documents.map((document) => (
+                    <div
+                      key={document.id}
+                      className="
+                        flex
+                        items-center
+                        justify-between
+                        gap-3
+                        p-3
+                        bg-white
+                        border
+                        border-slate-200
+                        rounded-xl
+                        hover:border-blue-200
+                        hover:bg-blue-50/30
+                        transition
+                      "
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className="
+                            w-9
+                            h-9
+                            rounded-lg
+                            bg-blue-50
+                            border
+                            border-blue-100
+                            flex
+                            items-center
+                            justify-center
+                            shrink-0
+                          "
+                        >
+                          <FileText className="w-4 h-4 text-blue-600" />
+                        </div>
+
+                        <div className="min-w-0">
+                          <div
+                            className="text-sm font-medium text-slate-700 truncate"
+                            title={document.file_name || 'מסמך'}
+                          >
+                            {document.file_name || 'מסמך ללא שם'}
+                          </div>
+
+                          {document.created_at && (
+                            <div className="text-[10px] text-slate-400 mt-0.5">
+                              {new Date(
+                                document.created_at
+                              ).toLocaleDateString('he-IL')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {document.file_url ? (
+                        <a
+                          href={document.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(event) => event.stopPropagation()}
+                          className="
+                            inline-flex
+                            items-center
+                            gap-1.5
+                            px-3
+                            py-2
+                            rounded-lg
+                            bg-blue-50
+                            text-blue-600
+                            hover:bg-blue-100
+                            text-xs
+                            font-medium
+                            shrink-0
+                            transition
+                          "
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          צפייה
+                        </a>
+                      ) : (
+                        <span className="text-xs text-slate-400">
+                          אין כתובת לקובץ
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : donation.file_url ? (
+                <div
+                  className="
+                    flex
+                    items-center
+                    justify-between
+                    gap-3
+                    p-3
+                    bg-white
+                    border
+                    border-slate-200
+                    rounded-xl
+                  "
                 >
-                  <FileText className="w-4 h-4" />
-                  צפייה בקובץ
-                </a>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className="
+                        w-9
+                        h-9
+                        rounded-lg
+                        bg-blue-50
+                        border
+                        border-blue-100
+                        flex
+                        items-center
+                        justify-center
+                        shrink-0
+                      "
+                    >
+                      <FileText className="w-4 h-4 text-blue-600" />
+                    </div>
+
+                    <div className="text-sm font-medium text-slate-700">
+                      קובץ מצורף
+                    </div>
+                  </div>
+
+                  <a
+                    href={donation.file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => event.stopPropagation()}
+                    className="
+                      inline-flex
+                      items-center
+                      gap-1.5
+                      px-3
+                      py-2
+                      rounded-lg
+                      bg-blue-50
+                      text-blue-600
+                      hover:bg-blue-100
+                      text-xs
+                      font-medium
+                      shrink-0
+                      transition
+                    "
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    צפייה
+                  </a>
+                </div>
               ) : (
-                <div className="text-sm text-slate-400">
-                  אין קובץ מצורף
+                <div className="text-sm text-slate-400 py-2">
+                  אין מסמכים מצורפים
                 </div>
               )}
             </div>
@@ -364,8 +582,12 @@ export default function DonationCardModal({
               <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 md:col-span-2">
                 <div className="flex items-center gap-2 mb-2">
                   <StickyNote className="w-4 h-4 text-slate-400" />
-                  <span className="text-xs text-slate-400">הערות</span>
+
+                  <span className="text-xs text-slate-400">
+                    הערות
+                  </span>
                 </div>
+
                 <div className="text-sm text-slate-700 whitespace-pre-wrap leading-6">
                   {donation.notes}
                 </div>
@@ -386,7 +608,6 @@ export default function DonationCardModal({
             "
           >
             <div className="flex items-center gap-2">
-              {/* הגנה על מחיקה */}
               <Protect permId="donations_delete">
                 <button
                   type="button"
@@ -412,11 +633,11 @@ export default function DonationCardModal({
                   "
                 >
                   <Trash2 className="w-4 h-4" />
+
                   {isProcessing ? 'מעבד...' : 'מחק תרומה'}
                 </button>
               </Protect>
 
-              {/* הגנה על עריכה */}
               {onEdit && (
                 <Protect permId="donations_edit">
                   <button
