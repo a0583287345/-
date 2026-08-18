@@ -27,14 +27,17 @@ import { usePermissions } from '@/hooks/usePermissions';
 import DonorFormModal from '@/components/DonorFormModal';
 import DonationFormModal from '@/components/DonationFormModal';
 import DonationCardModal from '@/components/DonationCardModal';
+import AddReminderModal from '@/components/AddReminderModal';
 import DonorsTab from '@/components/DonorsTab';
 import DonationsTab from '@/components/DonationsTab';
+import RemindersTab from '@/components/RemindersTab';
 import DonorCard from '@/components/DonorCard';
 
 import {
   HeartHandshake,
   UserPlus,
   FileSpreadsheet,
+  Bell,
   X,
   LogOut,
   Loader2,
@@ -70,6 +73,9 @@ function DashboardContent() {
   } = usePermissions();
 
   const isAdmin = hasPermission('manage_users');
+  
+  // בדיקת הרשאה לצפייה בלשונית תזכורות (מותאם למבנה ההרשאות במערכת שלך)
+  const canViewReminders = hasPermission('reminders_view') || isAdmin;
 
   const currentUserNickname =
     profile?.full_name ||
@@ -108,15 +114,19 @@ function DashboardContent() {
   const currentTabFromUrl =
     searchParams.get('tab') === 'donations'
       ? 'donations'
+      : searchParams.get('tab') === 'reminders' && canViewReminders
+      ? 'reminders'
       : 'donors';
 
   const [activeTab, setActiveTab] =
-    useState<'donors' | 'donations'>(
+    useState<'donors' | 'donations' | 'reminders'>(
       currentTabFromUrl
     );
 
   const handleTabChange = useCallback(
-    (tab: 'donors' | 'donations') => {
+    (tab: 'donors' | 'donations' | 'reminders') => {
+      if (tab === 'reminders' && !canViewReminders) return;
+      
       setActiveTab(tab);
 
       const params = new URLSearchParams(
@@ -133,20 +143,26 @@ function DashboardContent() {
       pathname,
       router,
       searchParams,
+      canViewReminders,
     ]
   );
 
   useEffect(() => {
-    const tabFromUrl =
-      searchParams.get('tab');
+    const tabFromUrl = searchParams.get('tab');
+
+    if (tabFromUrl === 'reminders' && !canViewReminders) {
+      setActiveTab('donors');
+      return;
+    }
 
     if (
       tabFromUrl === 'donations' ||
-      tabFromUrl === 'donors'
+      tabFromUrl === 'donors' ||
+      tabFromUrl === 'reminders'
     ) {
       setActiveTab(tabFromUrl);
     }
-  }, [searchParams]);
+  }, [searchParams, canViewReminders]);
 
   /* ============================================================
      תורם - צפייה
@@ -188,6 +204,24 @@ function DashboardContent() {
   ] = useState<Donation | null>(null);
 
   /* ============================================================
+     תזכורת - הוספה / עריכה
+  ============================================================ */
+  const [
+    isReminderModalOpen,
+    setIsReminderModalOpen,
+  ] = useState(false);
+
+  const [
+    selectedDonorForReminder,
+    setSelectedDonorForReminder,
+  ] = useState<string | null>(null);
+
+  const [
+    selectedReminderToEdit,
+    setSelectedReminderToEdit,
+  ] = useState<any | null>(null);
+
+  /* ============================================================
      כרטיס תרומה
   ============================================================ */
   const [
@@ -203,123 +237,56 @@ function DashboardContent() {
     let presenceChannel: any;
 
     async function initSystem() {
-      /*
-       * אם הקונטקסט של המשתמש או ההרשאות
-       * עדיין בטעינה - מחכים.
-       */
-      if (
-        authLoading ||
-        loadingPerms
-      ) {
+      if (authLoading || loadingPerms) {
         return;
       }
 
-      /*
-       * אם המשתמש לא מחובר -
-       * מעבר למסך login.
-       */
       if (!user) {
         router.push('/login');
         return;
       }
 
-      /*
-       * חוסמים כניסה לדאשבורד
-       * למי שאין הרשאה.
-       */
-      if (
-        !hasPermission(
-          'view_dashboard'
-        )
-      ) {
+      if (!hasPermission('view_dashboard')) {
         return;
       }
 
-      /*
-       * טעינת נתונים פעם אחת בלבד.
-       */
-      if (
-        !hasFetchedData.current
-      ) {
+      if (!hasFetchedData.current) {
         fetchData();
         hasFetchedData.current = true;
       }
 
-      /* ========================================================
-         Presence - משתמשים מחוברים
-      ======================================================== */
-      presenceChannel =
-        supabase.channel(
-          'online-users'
-        );
+      presenceChannel = supabase.channel('online-users');
 
       presenceChannel
-        .on(
-          'presence',
-          {
-            event: 'sync',
-          },
-          () => {
-            const newState =
-              presenceChannel.presenceState();
+        .on('presence', { event: 'sync' }, () => {
+          const newState = presenceChannel.presenceState();
+          const usersMap = new Map();
 
-            const usersMap =
-              new Map();
-
-            for (
-              const key in newState
-            ) {
-              const presences =
-                newState[key] as any[];
-
-              if (
-                presences.length > 0
-              ) {
-                usersMap.set(
-                  presences[0].user_id,
-                  presences[0]
-                );
-              }
-            }
-
-            setOnlineUsers(
-              Array.from(
-                usersMap.values()
-              )
-            );
-          }
-        )
-        .subscribe(
-          async (
-            status: string
-          ) => {
-            if (
-              status ===
-              'SUBSCRIBED'
-            ) {
-              await presenceChannel.track(
-                {
-                  user_id: user.id,
-                  nickname:
-                    currentUserNickname,
-                  role:
-                    currentUserRole,
-                }
-              );
+          for (const key in newState) {
+            const presences = newState[key] as any[];
+            if (presences.length > 0) {
+              usersMap.set(presences[0].user_id, presences[0]);
             }
           }
-        );
+
+          setOnlineUsers(Array.from(usersMap.values()));
+        })
+        .subscribe(async (status: string) => {
+          if (status === 'SUBSCRIBED') {
+            await presenceChannel.track({
+              user_id: user.id,
+              nickname: currentUserNickname,
+              role: currentUserRole,
+            });
+          }
+        });
     }
 
     initSystem();
 
     return () => {
-      if (
-        presenceChannel
-      ) {
-        supabase.removeChannel(
-          presenceChannel
-        );
+      if (presenceChannel) {
+        supabase.removeChannel(presenceChannel);
       }
     };
   }, [
@@ -346,63 +313,32 @@ function DashboardContent() {
     setLoading(true);
 
     const [
-      {
-        data: donorsData,
-        error: donorsError,
-      },
-      {
-        data: donationsData,
-        error: donationsError,
-      },
+      { data: donorsData, error: donorsError },
+      { data: donationsData, error: donationsError },
     ] = await Promise.all([
       supabase
         .from('donors')
         .select('*')
-        .order(
-          'created_at',
-          {
-            ascending: false,
-          }
-        ),
+        .order('created_at', { ascending: false }),
 
       supabase
         .from('donations')
         .select('*')
-        .order(
-          'donation_date',
-          {
-            ascending: false,
-          }
-        ),
+        .order('donation_date', { ascending: false }),
     ]);
 
     if (donorsError) {
-      console.error(
-        'שגיאה בטעינת תורמים:',
-        donorsError
-      );
+      console.error('שגיאה בטעינת תורמים:', donorsError);
     } else if (donorsData) {
-      setDonors(
-        donorsData as Donor[]
-      );
+      setDonors(donorsData as Donor[]);
     }
 
     if (donationsError) {
-      console.error(
-        'שגיאה בטעינת תרומות:',
-        donationsError
-      );
+      console.error('שגיאה בטעינת תרומות:', donationsError);
     } else if (donationsData) {
-      const donationData =
-        donationsData as Donation[];
-
-      setDonations(
-        donationData
-      );
-
-      calculateTotals(
-        donationData
-      );
+      const donationData = donationsData as Donation[];
+      setDonations(donationData);
+      calculateTotals(donationData);
     }
 
     setLoading(false);
@@ -411,507 +347,265 @@ function DashboardContent() {
   /* ============================================================
      חישוב סכומים
   ============================================================ */
-  function calculateTotals(
-    data: Donation[]
-  ) {
-    const totals: Record<
-      string,
-      number
-    > = {};
+  function calculateTotals(data: Donation[]) {
+    const totals: Record<string, number> = {};
 
-    data.forEach(
-      (item) => {
-        const currency =
-          item.currency ||
-          'ILS';
+    data.forEach((item) => {
+      const currency = item.currency || 'ILS';
+      totals[currency] = (totals[currency] || 0) + Number(item.amount || 0);
+    });
 
-        totals[currency] =
-          (totals[currency] ||
-            0) +
-          Number(
-            item.amount || 0
-          );
-      }
-    );
-
-    setTotalsByCurrency(
-      totals
-    );
+    setTotalsByCurrency(totals);
   }
 
   /* ============================================================
      טעינת תרומות
   ============================================================ */
   async function fetchDonations() {
-    setDonationsLoading(
-      true
-    );
+    setDonationsLoading(true);
 
-    const {
-      data,
-      error,
-    } = await supabase
+    const { data, error } = await supabase
       .from('donations')
       .select('*')
-      .order(
-        'donation_date',
-        {
-          ascending: false,
-        }
-      );
+      .order('donation_date', { ascending: false });
 
     if (error) {
-      console.error(
-        'שגיאה בטעינת תרומות:',
-        error
-      );
+      console.error('שגיאה בטעינת תרומות:', error);
     } else if (data) {
-      const donationData =
-        data as Donation[];
-
-      setDonations(
-        donationData
-      );
-
-      calculateTotals(
-        donationData
-      );
+      const donationData = data as Donation[];
+      setDonations(donationData);
+      calculateTotals(donationData);
     }
 
-    setDonationsLoading(
-      false
-    );
+    setDonationsLoading(false);
   }
 
   /* ============================================================
      מיפוי תורמים
   ============================================================ */
   const donorMap = useMemo(() => {
-    const map =
-      new Map<string, Donor>();
-
-    donors.forEach(
-      (donor) => {
-        map.set(
-          donor.id,
-          donor
-        );
-      }
-    );
-
+    const map = new Map<string, Donor>();
+    donors.forEach((donor) => {
+      map.set(donor.id, donor);
+    });
     return map;
   }, [donors]);
 
   /* ============================================================
      שם תורם
   ============================================================ */
-  function getDonorName(
-    donorId: string | null
-  ) {
-    if (!donorId) {
-      return 'ללא תורם';
-    }
-
-    const donor =
-      donorMap.get(
-        donorId
-      );
-
-    if (!donor) {
-      return 'תורם לא נמצא';
-    }
-
-    const name =
-      `${donor.first_name_he || ''} ${donor.last_name_he || ''}`
-        .trim();
-
-    return (
-      name || 'ללא שם'
-    );
+  function getDonorName(donorId: string | null) {
+    if (!donorId) return 'ללא תורם';
+    const donor = donorMap.get(donorId);
+    if (!donor) return 'תורם לא נמצא';
+    const name = `${donor.first_name_he || ''} ${donor.last_name_he || ''}`.trim();
+    return name || 'ללא שם';
   }
 
   /* ============================================================
      פתיחת כרטיס תורם
   ============================================================ */
-  function handleOpenViewDonor(
-    donor: Donor
-  ) {
-    setSelectedDonation(
-      null
-    );
-
-    setSelectedDonationToEdit(
-      null
-    );
-
-    setIsDonorModalOpen(
-      false
-    );
-
-    setIsDonationModalOpen(
-      false
-    );
-
-    setSelectedDonorToEdit(
-      null
-    );
-
-    setSelectedDonorForDonation(
-      null
-    );
-
-    setSelectedDonorForView(
-      donor
-    );
+  function handleOpenViewDonor(donor: Donor) {
+    setSelectedDonation(null);
+    setSelectedDonationToEdit(null);
+    setIsDonorModalOpen(false);
+    setIsDonationModalOpen(false);
+    setIsReminderModalOpen(false);
+    setSelectedDonorToEdit(null);
+    setSelectedDonorForDonation(null);
+    setSelectedDonorForReminder(null);
+    setSelectedDonorForView(donor);
   }
 
   /* ============================================================
      יצירת תורם
   ============================================================ */
   function handleOpenCreateDonor() {
-    setSelectedDonation(
-      null
-    );
-
-    setSelectedDonationToEdit(
-      null
-    );
-
-    setIsDonationModalOpen(
-      false
-    );
-
-    setSelectedDonorForView(
-      null
-    );
-
-    setSelectedDonorForDonation(
-      null
-    );
-
-    setSelectedDonorToEdit(
-      null
-    );
-
-    setIsDonorModalOpen(
-      true
-    );
+    setSelectedDonation(null);
+    setSelectedDonationToEdit(null);
+    setIsDonationModalOpen(false);
+    setIsReminderModalOpen(false);
+    setSelectedDonorForView(null);
+    setSelectedDonorForDonation(null);
+    setSelectedDonorForReminder(null);
+    setSelectedDonorToEdit(null);
+    setIsDonorModalOpen(true);
   }
 
   /* ============================================================
      עריכת תורם
   ============================================================ */
-  function handleOpenEditDonor(
-    donor: Donor
-  ) {
-    setSelectedDonation(
-      null
-    );
-
-    setSelectedDonationToEdit(
-      null
-    );
-
-    setIsDonationModalOpen(
-      false
-    );
-
-    setSelectedDonorForView(
-      null
-    );
-
-    setSelectedDonorForDonation(
-      null
-    );
-
-    setSelectedDonorToEdit(
-      donor
-    );
-
-    setIsDonorModalOpen(
-      true
-    );
+  function handleOpenEditDonor(donor: Donor) {
+    setSelectedDonation(null);
+    setSelectedDonationToEdit(null);
+    setIsDonationModalOpen(false);
+    setIsReminderModalOpen(false);
+    setSelectedDonorForView(null);
+    setSelectedDonorForDonation(null);
+    setSelectedDonorForReminder(null);
+    setSelectedDonorToEdit(donor);
+    setIsDonorModalOpen(true);
   }
 
   /* ============================================================
      הוספת תרומה
   ============================================================ */
-  function handleOpenAddDonation(
-    donorId?: string,
-    e?: React.MouseEvent
-  ) {
-    if (e) {
-      e.stopPropagation();
-    }
+  function handleOpenAddDonation(donorId?: string, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
 
-    setSelectedDonationToEdit(
-      null
-    );
-
-    setSelectedDonation(
-      null
-    );
-
-    setIsDonorModalOpen(
-      false
-    );
-
-    setSelectedDonorForView(
-      null
-    );
-
-    setSelectedDonorToEdit(
-      null
-    );
-
-    setSelectedDonorForDonation(
-      donorId || null
-    );
-
-    setIsDonationModalOpen(
-      true
-    );
+    setSelectedDonationToEdit(null);
+    setSelectedDonation(null);
+    setIsDonorModalOpen(false);
+    setIsReminderModalOpen(false);
+    setSelectedDonorForView(null);
+    setSelectedDonorToEdit(null);
+    setSelectedDonorForDonation(donorId || null);
+    setIsDonationModalOpen(true);
   }
 
   /* ============================================================
      עריכת תרומה
   ============================================================ */
-  function handleOpenEditDonation(
-    donation: Donation,
-    e?: React.MouseEvent
-  ) {
-    if (e) {
-      e.stopPropagation();
-    }
+  function handleOpenEditDonation(donation: Donation, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
 
-    setSelectedDonation(
-      null
-    );
+    setSelectedDonation(null);
+    setIsDonorModalOpen(false);
+    setIsReminderModalOpen(false);
+    setSelectedDonorForView(null);
+    setSelectedDonorToEdit(null);
+    setSelectedDonorForDonation(donation.donor_id || null);
+    setSelectedDonationToEdit(donation);
+    setIsDonationModalOpen(true);
+  }
 
-    setIsDonorModalOpen(
-      false
-    );
+  /* ============================================================
+     הוספת תזכורת
+  ============================================================ */
+  function handleOpenAddReminder(donorId?: string, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
+    if (!canViewReminders) return;
 
-    setSelectedDonorForView(
-      null
-    );
+    setSelectedReminderToEdit(null);
+    setSelectedDonation(null);
+    setSelectedDonationToEdit(null);
+    setIsDonorModalOpen(false);
+    setIsDonationModalOpen(false);
+    setSelectedDonorToEdit(null);
+    setSelectedDonorForDonation(null);
+    setSelectedDonorForReminder(donorId || null);
+    setIsReminderModalOpen(true);
+  }
 
-    setSelectedDonorToEdit(
-      null
-    );
+  /* ============================================================
+     עריכת תזכורת
+  ============================================================ */
+  function handleOpenEditReminder(reminder: any, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
+    if (!canViewReminders) return;
 
-    setSelectedDonorForDonation(
-      donation.donor_id ||
-        null
-    );
-
-    setSelectedDonationToEdit(
-      donation
-    );
-
-    setIsDonationModalOpen(
-      true
-    );
+    setSelectedDonation(null);
+    setIsDonorModalOpen(false);
+    setIsDonationModalOpen(false);
+    setSelectedDonorToEdit(null);
+    setSelectedDonorForDonation(null);
+    setSelectedDonorForReminder(reminder.donor_id || null);
+    setSelectedReminderToEdit(reminder);
+    setIsReminderModalOpen(true);
   }
 
   /* ============================================================
      פתיחת כרטיס תרומה מתוך רשימת התרומות
   ============================================================ */
-  function handleOpenDonationCard(
-    donation: Donation,
-    e?: React.MouseEvent
-  ) {
-    if (e) {
-      e.stopPropagation();
-    }
+  function handleOpenDonationCard(donation: Donation, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
 
-    setIsDonationModalOpen(
-      false
-    );
-
-    setIsDonorModalOpen(
-      false
-    );
-
-    setSelectedDonorForView(
-      null
-    );
-
-    setSelectedDonorToEdit(
-      null
-    );
-
-    setSelectedDonorForDonation(
-      null
-    );
-
-    setSelectedDonationToEdit(
-      null
-    );
-
-    setSelectedDonation(
-      donation
-    );
+    setIsDonationModalOpen(false);
+    setIsDonorModalOpen(false);
+    setIsReminderModalOpen(false);
+    setSelectedDonorForView(null);
+    setSelectedDonorToEdit(null);
+    setSelectedDonorForDonation(null);
+    setSelectedDonationToEdit(null);
+    setSelectedDonation(donation);
   }
 
   /* ============================================================
      פתיחת כרטיס תרומה לפי ID
-     
-     זה החיבור החדש ל-DonorCard.
-     
-     DonorCard שולח donation.id בלבד,
-     ואנחנו מביאים את התרומה המלאה מ-Supabase.
   ============================================================ */
-  async function handleOpenDonationCardById(
-    donationId: string,
-    e?: React.MouseEvent
-  ) {
-    if (e) {
-      e.stopPropagation();
-    }
+  async function handleOpenDonationCardById(donationId: string, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
+    if (!donationId) return;
 
-    if (!donationId) {
-      return;
-    }
-
-    /*
-     * אם התרומה כבר נמצאת בזיכרון,
-     * אין צורך לפנות שוב ל-Supabase.
-     */
-    const existingDonation =
-      donations.find(
-        (donation) =>
-          donation.id ===
-          donationId
-      );
-
+    const existingDonation = donations.find((d) => d.id === donationId);
     if (existingDonation) {
-      handleOpenDonationCard(
-        existingDonation,
-        e
-      );
-
+      handleOpenDonationCard(existingDonation, e);
       return;
     }
 
-    /*
-     * אם לא נמצאה בזיכרון -
-     * מביאים אותה ישירות מהמסד.
-     */
     try {
-      const {
-        data,
-        error,
-      } = await supabase
+      const { data, error } = await supabase
         .from('donations')
         .select('*')
-        .eq(
-          'id',
-          donationId
-        )
+        .eq('id', donationId)
         .maybeSingle();
 
       if (error) {
-        console.error(
-          'שגיאה בטעינת התרומה:',
-          error
-        );
-
-        alert(
-          'לא ניתן לטעון את פרטי התרומה.'
-        );
-
+        console.error('שגיאה בטעינת התרומה:', error);
+        alert('לא ניתן לטעון את פרטי התרומה.');
         return;
       }
 
       if (!data) {
-        alert(
-          'התרומה לא נמצאה.'
-        );
-
+        alert('התרומה לא נמצאה.');
         return;
       }
 
-      handleOpenDonationCard(
-        data as Donation,
-        e
-      );
+      handleOpenDonationCard(data as Donation, e);
     } catch (error) {
-      console.error(
-        'שגיאה בלתי צפויה בטעינת תרומה:',
-        error
-      );
-
-      alert(
-        'אירעה שגיאה בטעינת פרטי התרומה.'
-      );
+      console.error('שגיאה בלתי צפויה בטעינת תרומה:', error);
+      alert('אירעה שגיאה בטעינת פרטי התרומה.');
     }
   }
 
   /* ============================================================
-     סגירת מודאל תרומה
+     סגירת מודאל תרומה / תזכורת
   ============================================================ */
   function handleCloseDonationModal() {
-    setIsDonationModalOpen(
-      false
-    );
+    setIsDonationModalOpen(false);
+    setSelectedDonationToEdit(null);
+    setSelectedDonorForDonation(null);
+  }
 
-    setSelectedDonationToEdit(
-      null
-    );
-
-    setSelectedDonorForDonation(
-      null
-    );
+  function handleCloseReminderModal() {
+    setIsReminderModalOpen(false);
+    setSelectedReminderToEdit(null);
+    setSelectedDonorForReminder(null);
   }
 
   /* ============================================================
      סטטיסטיקות
   ============================================================ */
-  const activeRecurring =
-    donors.filter(
-      (donor) =>
-        donor.is_recurring
-    ).length;
-
-  const yissacharZevulunCount =
-    donors.filter(
-      (donor) =>
-        donor.has_yissachar_zevulun
-    ).length;
+  const activeRecurring = donors.filter((donor) => donor.is_recurring).length;
+  const yissacharZevulunCount = donors.filter((donor) => donor.has_yissachar_zevulun).length;
 
   /* ============================================================
      חומת המגן
   ============================================================ */
-  if (
-    authLoading ||
-    loadingPerms
-  ) {
+  if (authLoading || loadingPerms) {
     return (
       <div className="flex h-screen w-full flex-col items-center justify-center bg-slate-50">
         <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
-
-        <span className="text-slate-600 font-medium">
-          טוען הרשאות מערכת...
-        </span>
+        <span className="text-slate-600 font-medium">טוען הרשאות מערכת...</span>
       </div>
     );
   }
 
-  if (
-    !user ||
-    !hasPermission(
-      'view_dashboard'
-    )
-  ) {
+  if (!user || !hasPermission('view_dashboard')) {
     return (
       <div className="flex h-screen w-full flex-col items-center justify-center bg-slate-50 p-6 text-center">
         <ShieldAlert className="w-20 h-20 text-red-400 mb-4" />
-
-        <h2 className="text-2xl font-bold text-slate-800 mb-2">
-          אין לך גישה למערכת
-        </h2>
-
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">אין לך גישה למערכת</h2>
         <p className="text-slate-600 max-w-md">
           החשבון שלך מחובר, אך אין לך הרשאה מתאימה לצפות בלוח הבקרה. אנא פנה למנהל המערכת.
         </p>
@@ -923,31 +617,22 @@ function DashboardContent() {
      RENDER
   ============================================================ */
   return (
-    <div
-      dir="rtl"
-      className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans"
-    >
+    <div dir="rtl" className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-6">
 
-        {/* =====================================================
-            כותרת + פרטי משתמש + כפתורי ניהול והתנתקות
-        ===================================================== */}
+        {/* HEADER */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-slate-800 flex items-center gap-2">
               <HeartHandshake className="w-8 h-8 text-blue-600" />
-
               מערכת ניהול תורמים
             </h1>
-
             <p className="text-sm text-slate-500 mt-1">
               ניהול מעקב תרומות, הו"ק עבור ישיבת עטרת צבי אשדוד
             </p>
           </div>
 
           <div className="flex flex-col sm:flex-row items-end sm:items-center gap-4 w-full md:w-auto">
-
-            {/* משתמש מחובר */}
             <div className="bg-white border border-slate-200 rounded-xl p-2.5 shadow-sm flex items-center gap-3 w-full sm:w-auto">
               <div className="bg-blue-50 p-2 rounded-full hidden sm:block">
                 <UserCircle className="w-6 h-6 text-blue-600" />
@@ -957,14 +642,11 @@ function DashboardContent() {
                 <p className="text-[11px] text-slate-500 font-medium leading-none mb-1">
                   מחובר/ת כעת:
                 </p>
-
                 <p className="font-bold text-slate-800 text-sm leading-none mb-1">
                   {currentUserNickname}
                 </p>
-
                 <p className="text-[10px] font-bold">
                   הרשאה:{' '}
-
                   <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200 ml-1">
                     {currentUserRole}
                   </span>
@@ -973,377 +655,245 @@ function DashboardContent() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-
               {isAdmin && (
                 <button
-                  onClick={() =>
-                    router.push(
-                      '/admin'
-                    )
-                  }
+                  onClick={() => router.push('/admin')}
                   className="flex items-center gap-2 px-4 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-sm font-bold rounded-xl border border-purple-200 transition shadow-sm"
                 >
                   <Settings className="w-4 h-4 text-purple-600" />
-
                   פאנל ניהול
                 </button>
               )}
 
               <button
-                onClick={
-                  handleLogout
-                }
+                onClick={handleLogout}
                 className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-red-50 hover:text-red-600 hover:border-red-200 text-slate-700 text-sm font-medium rounded-xl border border-slate-200 transition shadow-sm"
               >
                 <LogOut className="w-4 h-4 text-slate-500" />
-
                 התנתק
               </button>
             </div>
           </div>
         </div>
 
-        {/* =====================================================
-            משתמשים מחוברים
-        ===================================================== */}
+        {/* ONLINE USERS */}
         {isAdmin &&
-          onlineUsers.filter(
-            (u) =>
-              u.nickname !==
-              currentUserNickname
-          ).length > 0 && (
+          onlineUsers.filter((u) => u.nickname !== currentUserNickname).length > 0 && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex flex-wrap items-center gap-3 shadow-sm animate-in fade-in slide-in-from-top-2">
               <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
                 <Radio className="w-4 h-4 animate-pulse text-emerald-600" />
-
                 משתמשים נוספים שמחוברים למערכת כעת:
               </div>
 
               {onlineUsers
-                .filter(
-                  (u) =>
-                    u.nickname !==
-                    currentUserNickname
-                )
-                .map(
-                  (
-                    u,
-                    i
-                  ) => (
-                    <div
-                      key={i}
-                      className="bg-white border border-emerald-200 text-emerald-700 px-2.5 py-1 rounded-lg text-xs font-medium shadow-sm flex items-center gap-1.5"
-                    >
-                      <UserCircle className="w-3.5 h-3.5" />
-
-                      {u.nickname}
-
-                      <span className="opacity-75">
-                        ({u.role})
-                      </span>
-                    </div>
-                  )
-                )}
+                .filter((u) => u.nickname !== currentUserNickname)
+                .map((u, i) => (
+                  <div
+                    key={i}
+                    className="bg-white border border-emerald-200 text-emerald-700 px-2.5 py-1 rounded-lg text-xs font-medium shadow-sm flex items-center gap-1.5"
+                  >
+                    <UserCircle className="w-3.5 h-3.5" />
+                    {u.nickname}
+                    <span className="opacity-75">({u.role})</span>
+                  </div>
+                ))}
             </div>
           )}
 
-        {/* =====================================================
-            סטטיסטיקות
-        ===================================================== */}
-
-        {/* =====================================================
-            לשוניות
-        ===================================================== */}
+        {/* TABS HEADER */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-
           <div className="border-b border-slate-200 bg-slate-50 p-2">
             <div className="flex gap-2">
-
               <button
-                onClick={() =>
-                  handleTabChange(
-                    'donors'
-                  )
-                }
+                onClick={() => handleTabChange('donors')}
                 className={`
                   flex-1 md:flex-none px-6 py-3 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2
                   ${
-                    activeTab ===
-                    'donors'
+                    activeTab === 'donors'
                       ? 'bg-white text-blue-600 shadow-sm border border-slate-200'
                       : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
                   }
                 `}
               >
                 <UserPlus className="w-4 h-4" />
-
                 תורמים
               </button>
 
               <button
                 onClick={() => {
-                  handleTabChange(
-                    'donations'
-                  );
-
+                  handleTabChange('donations');
                   fetchDonations();
                 }}
                 className={`
                   flex-1 md:flex-none px-6 py-3 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2
                   ${
-                    activeTab ===
-                    'donations'
+                    activeTab === 'donations'
                       ? 'bg-white text-emerald-600 shadow-sm border border-slate-200'
                       : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
                   }
                 `}
               >
                 <FileSpreadsheet className="w-4 h-4" />
-
                 תרומות
               </button>
+
+              {canViewReminders && (
+                <button
+                  onClick={() => handleTabChange('reminders')}
+                  className={`
+                    flex-1 md:flex-none px-6 py-3 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2
+                    ${
+                      activeTab === 'reminders'
+                        ? 'bg-white text-purple-600 shadow-sm border border-slate-200'
+                        : 'text-slate-500 hover:bg-white/70 hover:text-slate-700'
+                    }
+                  `}
+                >
+                  <Bell className="w-4 h-4" />
+                  תזכורות
+                </button>
+              )}
             </div>
           </div>
 
-          {/* ===================================================
-              לשונית תורמים
-          =================================================== */}
-          {activeTab ===
-            'donors' && (
+          {/* TAB: DONORS */}
+          {activeTab === 'donors' && (
             <DonorsTab
               donors={donors}
               loading={loading}
-              activeRecurring={
-                activeRecurring
-              }
-              yissacharZevulunCount={
-                yissacharZevulunCount
-              }
-              onCreateDonor={
-                handleOpenCreateDonor
-              }
-              onViewDonor={
-                handleOpenViewDonor
-              }
-              onAddDonation={
-                handleOpenAddDonation
-              }
+              activeRecurring={activeRecurring}
+              yissacharZevulunCount={yissacharZevulunCount}
+              onCreateDonor={handleOpenCreateDonor}
+              onViewDonor={handleOpenViewDonor}
+              onAddDonation={handleOpenAddDonation}
             />
           )}
 
-          {/* ===================================================
-              לשונית תרומות
-          =================================================== */}
-          {activeTab ===
-            'donations' && (
+          {/* TAB: DONATIONS */}
+          {activeTab === 'donations' && (
             <DonationsTab
-              donations={
-                donations
-              }
+              donations={donations}
               donors={donors}
-              donorMap={
-                donorMap
-              }
-              loading={
-                donationsLoading
-              }
-              getDonorName={
-                getDonorName
-              }
-              onRefresh={
-                fetchDonations
-              }
-              onAddDonation={
-                handleOpenAddDonation
-              }
-              onViewDonation={
-                handleOpenDonationCard
-              }
-              onViewDonor={
-                handleOpenViewDonor
-              }
+              donorMap={donorMap}
+              loading={donationsLoading}
+              getDonorName={getDonorName}
+              onRefresh={fetchDonations}
+              onAddDonation={handleOpenAddDonation}
+              onViewDonation={handleOpenDonationCard}
+              onViewDonor={handleOpenViewDonor}
+            />
+          )}
+
+          {/* TAB: REMINDERS */}
+          {activeTab === 'reminders' && canViewReminders && (
+            <RemindersTab
+              donors={donors}
+              donorMap={donorMap}
+              onAddReminder={handleOpenAddReminder}
+              onEditReminder={handleOpenEditReminder}
+              onViewDonor={handleOpenViewDonor}
             />
           )}
         </div>
 
-        {/* =====================================================
-            כרטיס תרומה
-        ===================================================== */}
+        {/* DONATION CARD MODAL */}
         {selectedDonation && (
           <DonationCardModal
             isOpen={true}
-            donation={
-              selectedDonation
-            }
-            donor={
-              selectedDonation.donor_id
-                ? donorMap.get(
-                    selectedDonation.donor_id
-                  ) || null
-                : null
-            }
-            onClose={() =>
-              setSelectedDonation(
-                null
-              )
-            }
+            donation={selectedDonation}
+            donor={selectedDonation.donor_id ? donorMap.get(selectedDonation.donor_id) || null : null}
+            onClose={() => setSelectedDonation(null)}
             onDeleted={() => {
-              setSelectedDonation(
-                null
-              );
-
-              setSelectedDonationToEdit(
-                null
-              );
-
+              setSelectedDonation(null);
+              setSelectedDonationToEdit(null);
               fetchData();
               fetchDonations();
             }}
             onEdit={() => {
-              const donationToEdit =
-                selectedDonation;
-
-              setSelectedDonation(
-                null
-              );
-
-              handleOpenEditDonation(
-                donationToEdit
-              );
+              const donationToEdit = selectedDonation;
+              setSelectedDonation(null);
+              handleOpenEditDonation(donationToEdit);
             }}
           />
         )}
 
-        {/* =====================================================
-            כרטיס תורם
-        ===================================================== */}
+        {/* DONOR CARD MODAL */}
         {selectedDonorForView && (
           <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-
             <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-5xl max-h-[95vh] overflow-y-auto relative">
-
               <button
-                onClick={() =>
-                  setSelectedDonorForView(
-                    null
-                  )
-                }
+                onClick={() => setSelectedDonorForView(null)}
                 className="absolute top-4 left-4 z-10 p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg bg-white shadow-sm"
               >
                 <X className="w-5 h-5" />
               </button>
 
               <div className="p-5">
-
-                <div className="mb-4 font-bold text-slate-800 text-sm">
-                  כרטיס תורם מלא
-                </div>
+                <div className="mb-4 font-bold text-slate-800 text-sm">כרטיס תורם מלא</div>
 
                 <div className="rounded-xl overflow-hidden">
-
                   <DonorCard
-                    donor={
-                      selectedDonorForView
-                    }
-
-                    onAddDonation={(
-                      e
-                    ) =>
-                      handleOpenAddDonation(
-                        selectedDonorForView.id,
-                        e
-                      )
-                    }
-
-                    /*
-                     * =================================================
-                     * החיבור החדש:
-                     *
-                     * DonorCard שולח donation.id
-                     * לכאן, והפונקציה טוענת/פותחת
-                     * את כרטיס התרומה.
-                     * =================================================
-                     */
-                    onOpenDonationById={
-                      handleOpenDonationCardById
-                    }
+                    donor={selectedDonorForView}
+                    onAddDonation={(e) => handleOpenAddDonation(selectedDonorForView.id, e)}
+                    onAddReminder={canViewReminders ? (e) => handleOpenAddReminder(selectedDonorForView.id, e) : undefined}
+                    onOpenDonationById={handleOpenDonationCardById}
                   />
-
                 </div>
 
                 <div className="mt-5 pt-4 border-t border-slate-100 flex justify-between items-center">
-
                   <button
-                    onClick={() =>
-                      handleOpenEditDonor(
-                        selectedDonorForView
-                      )
-                    }
+                    onClick={() => handleOpenEditDonor(selectedDonorForView)}
                     className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-xl text-xs"
                   >
                     ערוך פרטי תורם
                   </button>
 
                   <button
-                    onClick={() =>
-                      setSelectedDonorForView(
-                        null
-                      )
-                    }
+                    onClick={() => setSelectedDonorForView(null)}
                     className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium px-4 py-2 rounded-xl text-xs"
                   >
                     סגור
                   </button>
-
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* =====================================================
-            מודאל תורם
-        ===================================================== */}
+        {/* DONOR FORM MODAL */}
         {isDonorModalOpen && (
           <DonorFormModal
-            isOpen={
-              isDonorModalOpen
-            }
-            onClose={() =>
-              setIsDonorModalOpen(
-                false
-              )
-            }
-            onSuccess={() =>
-              fetchData()
-            }
-            donorToEdit={
-              selectedDonorToEdit
-            }
+            isOpen={isDonorModalOpen}
+            onClose={() => setIsDonorModalOpen(false)}
+            onSuccess={() => fetchData()}
+            donorToEdit={selectedDonorToEdit}
           />
         )}
 
-        {/* =====================================================
-            מודאל תרומה
-        ===================================================== */}
+        {/* DONATION FORM MODAL */}
         {isDonationModalOpen && (
           <DonationFormModal
-            isOpen={
-              isDonationModalOpen
-            }
-            onClose={
-              handleCloseDonationModal
-            }
+            isOpen={isDonationModalOpen}
+            onClose={handleCloseDonationModal}
             onSuccess={() => {
               fetchData();
               fetchDonations();
             }}
-            editingDonation={
-              selectedDonationToEdit
-            }
-            preselectedDonorId={
-              selectedDonorForDonation
-            }
+            editingDonation={selectedDonationToEdit}
+            preselectedDonorId={selectedDonorForDonation}
+          />
+        )}
+
+        {/* REMINDER FORM MODAL */}
+        {isReminderModalOpen && canViewReminders && (
+          <AddReminderModal
+            isOpen={isReminderModalOpen}
+            onClose={handleCloseReminderModal}
+            onSuccess={() => {
+              fetchData();
+            }}
+            preselectedDonorId={selectedDonorForReminder}
+            editingReminder={selectedReminderToEdit}
           />
         )}
 
@@ -1359,15 +909,9 @@ export default function HomePage() {
   return (
     <Suspense
       fallback={
-        <div
-          dir="rtl"
-          className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-3"
-        >
+        <div dir="rtl" className="min-h-screen bg-slate-50 flex flex-col items-center justify-center gap-3">
           <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-
-          <p className="text-slate-600 text-sm font-medium">
-            טוען את המערכת...
-          </p>
+          <p className="text-slate-600 text-sm font-medium">טוען את המערכת...</p>
         </div>
       }
     >

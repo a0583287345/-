@@ -108,6 +108,27 @@ const PERMISSION_GROUPS = [
       },
     ],
   },
+  {
+    title: 'ניהול תזכורות (Reminders)',
+    permissions: [
+      {
+        id: 'reminders_view',
+        label: 'צפייה בתזכורות',
+      },
+      {
+        id: 'reminders_create',
+        label: 'הוספת תזכורות חדשות',
+      },
+      {
+        id: 'reminders_edit',
+        label: 'עריכת תזכורות קיימות',
+      },
+      {
+        id: 'reminders_delete',
+        label: 'מחיקת תזכורות',
+      },
+    ],
+  },
 ];
 
 // יצירת רשימה שטוחה של כל ההרשאות בשביל התצוגה בכרטיסיות
